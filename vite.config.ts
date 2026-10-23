@@ -4,9 +4,11 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-
   server: {
     host: "0.0.0.0",
+    allowedHosts: [
+      "collabgarden-frontend-production.up.railway.app",
+    ],
     watch: {
       usePolling: true,
     },
