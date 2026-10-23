@@ -1,0 +1,14 @@
+/* CollabGarden shared design colors.
+   Change a value here to update every component that uses it. */
+:root {
+  --cg-primary: #246b49;
+  --cg-primary-dark: #174833;
+  --cg-background: #eef7f1;
+  --cg-accent: #63a97a;
+  --cg-text: #18201c;
+  --cg-muted: #66736b;
+  --cg-border: #dde5e0;
+  --cg-surface: #ffffff;
+  --cg-warning: #d89532;
+  --cg-error: #c94c4c;
+}
