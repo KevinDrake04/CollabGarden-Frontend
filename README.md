@@ -14,7 +14,7 @@ docker compose up --build
 
 Open http://localhost:5173
 
-Stop the app:
+Stop the app "Hi":
 
 ```bash
 docker compose down
