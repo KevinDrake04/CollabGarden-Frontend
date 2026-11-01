@@ -1,48 +1,86 @@
-import { NavLink, Outlet, Route, Routes, useParams } from "react-router";
+import {
+  Navigate,
+  NavLink,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router";
 import { Button } from "@heroui/react";
 import { Sprout } from "lucide-react";
 import ComponentGallery from "./pages/ComponentGallery";
 import "./styles/collabgarden-ui.css";
+import DirectoryPage from "./pages/directory/DirectoryPage";
 
-// Temporary navigation: all links are visible for routing tests.
-const sections = [
-  {
-    title: "Public",
-    links: [
-      ["Home", "/"],
-      ["Discover", "/discover"],
-      ["Creator profile", "/creators/demo"],
-      ["Log in", "/login"],
-      ["Sign up", "/signup"],
-    ],
-  },
-  {
-    title: "App (temporary)",
-    links: [
-      ["Components", "/components"],
-      ["Dashboard", "/app/dashboard"],
-      ["Campaigns", "/app/campaigns"],
-      ["Campaign workspace", "/app/campaigns/demo"],
-      ["Opportunities", "/app/opportunities"],
-      ["Messages", "/app/messages"],
-      ["Payments", "/app/payments"],
-      ["Profile", "/app/profile"],
-    ],
-  },
+const publicLinks = [
+  ["Home", "/"],
+  ["Discover", "/discover"],
+  ["Login", "/login"],
+  ["Signup", "/signup"],
 ] as const;
 
-// Shared layout for all temporary pages.
-function Layout() {
+// Public website. No development sidebar.
+function PublicLayout() {
   return (
     <>
       <header>
         <strong>CollabGarden</strong>
-        <span>Routing draft</span>
+
+        <nav className="public-nav" aria-label="Public">
+          {publicLinks.map(([label, url]) => (
+            <NavLink
+              key={url}
+              end
+              to={url}
+              className={({ isActive }) => (isActive ? "active" : "")}
+            >
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+      </header>
+
+      <main>
+        <Outlet />
+      </main>
+    </>
+  );
+}
+
+// Temporary development navigation.
+const devSections = [
+  {
+    title: "Website",
+    links: [["Public website", "/"]],
+  },
+  {
+    title: "Development",
+    links: [
+      ["Home", "/dev"],
+      ["Components", "/dev/components"],
+      ["Dashboard", "/dev/app/dashboard"],
+      ["Campaigns", "/dev/app/campaigns"],
+      ["Campaign workspace", "/dev/app/campaigns/demo"],
+      ["Opportunities", "/dev/app/opportunities"],
+      ["Messages", "/dev/app/messages"],
+      ["Payments", "/dev/app/payments"],
+      ["Profile", "/dev/app/profile"],
+    ],
+  },
+] as const;
+
+function DevLayout() {
+  return (
+    <>
+      <header>
+        <strong>CollabGarden</strong>
+        <span>Development</span>
       </header>
 
       <div className="shell">
-        <nav aria-label="Temporary page navigation">
-          {sections.map((section) => (
+        <nav aria-label="Development">
+          {devSections.map((section) => (
             <div key={section.title}>
               <h2>{section.title}</h2>
 
@@ -118,16 +156,22 @@ function CampaignWorkspace() {
   );
 }
 
+// Old /app links now live under /dev/app.
+function LegacyAppRedirect() {
+  const { pathname, search, hash } = useLocation();
+
+  return <Navigate to={`/dev${pathname}${search}${hash}`} replace />;
+}
+
 // Application routes.
 export default function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
-        {/* Public routes */}
-        <Route path="components" element={<ComponentGallery />} />
+      {/* Public website */}
+      <Route element={<PublicLayout />}>
         <Route index element={<Page title="Landing" />} />
 
-        <Route path="discover" element={<Page title="Discover Creators" />} />
+        <Route path="discover" element={<DirectoryPage />} />
 
         <Route path="creators/:creatorId" element={<CreatorProfile />} />
 
@@ -138,7 +182,23 @@ export default function App() {
           element={<Page title="Sign Up / Role Selection" />}
         />
 
-        {/* Application routes */}
+        <Route path="*" element={<Page title="404 — Page Not Found" />} />
+      </Route>
+
+      {/* Development workspace */}
+      <Route path="dev" element={<DevLayout />}>
+        <Route
+          index
+          element={
+            <Page
+              title="Development"
+              note="Temporary workspace for routing checks and the component gallery."
+            />
+          }
+        />
+
+        <Route path="components" element={<ComponentGallery />} />
+
         <Route
           path="app/dashboard"
           element={
@@ -170,9 +230,16 @@ export default function App() {
 
         <Route path="app/profile" element={<Page title="Profile" />} />
 
-        {/* Fallback */}
         <Route path="*" element={<Page title="404 — Page Not Found" />} />
       </Route>
+
+      {/* Old development links */}
+      <Route
+        path="components"
+        element={<Navigate to="/dev/components" replace />}
+      />
+
+      <Route path="app/*" element={<LegacyAppRedirect />} />
     </Routes>
   );
 }
