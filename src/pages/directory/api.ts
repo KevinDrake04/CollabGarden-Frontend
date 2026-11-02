@@ -22,7 +22,17 @@ type Business = {
   name: string;
   category: string | null;
   logo_url: string | null;
+  county_ids: number[];
 };
+
+function businessCountyNames(ids: number[] | undefined, counties: County[]) {
+  const names: string[] = [];
+  for (const id of ids ?? []) {
+    const match = counties.find((county) => county.county_id === id);
+    if (match) names.push(match.name);
+  }
+  return names.join(", ");
+}
 
 type Creator = {
   creator_id: number;
@@ -70,8 +80,8 @@ export async function getDirectory(
       }));
   }
 
-  // Businesses don't currently return county_id, so selected counties are
-  // requested separately and duplicate businesses are removed by ID.
+  // Ask for each selected county with county_id, then keep one card per business.
+  // county_ids on the business lists every county it operates in.
   const targets = selectedCounties.length === 0
     ? [null]
     : counties.filter((county) => selectedCounties.includes(county.name));
@@ -81,23 +91,20 @@ export async function getDirectory(
       const path = county
         ? `/api/v1/businesses?county_id=${county.county_id}`
         : "/api/v1/businesses";
-      return {
-        county: county?.name ?? "",
-        businesses: await get<Business[]>(path, signal),
-      };
+      return get<Business[]>(path, signal);
     }),
   );
 
   const unique = new Map<string, DirectoryEntry>();
-  for (const group of groups) {
-    for (const business of group.businesses) {
+  for (const businesses of groups) {
+    for (const business of businesses) {
       const id = `business-${business.business_id}`;
       if (!unique.has(id)) {
         unique.set(id, {
           id,
           name: business.name,
           category: business.category || "Business",
-          county: group.county,
+          county: businessCountyNames(business.county_ids, counties),
           imageUrl: business.logo_url ?? undefined,
         });
       }

@@ -33,6 +33,14 @@ function readFilters(search: string): Filters {
   };
 }
 
+function locationLabel(county: string) {
+  if (!county) return "New Jersey";
+  // One name stays "Essex County, NJ". Several names stay a list.
+  const names = county.split(", ");
+  if (names.length === 1) return `${names[0]} County, NJ`;
+  return `${names.map((name) => `${name} County`).join(", ")}, NJ`;
+}
+
 function DirectoryCard({ entry }: { entry: DirectoryEntry }) {
   return (
     <article className="flex min-w-0 items-center gap-4 rounded-2xl border border-[var(--cg-border)] bg-white p-5 shadow-sm transition hover:border-[var(--cg-accent)] hover:shadow-md">
@@ -42,7 +50,7 @@ function DirectoryCard({ entry }: { entry: DirectoryEntry }) {
         <p className="mt-1 text-sm text-[var(--cg-muted)]">{entry.category}</p>
         <p className="mt-2 flex items-center gap-1.5 text-sm text-[var(--cg-muted)]">
           <MapPin size={15} className="shrink-0 text-[var(--cg-primary)]" aria-hidden="true" />
-          {entry.county ? `${entry.county} County, NJ` : "New Jersey"}
+          {locationLabel(entry.county)}
         </p>
       </div>
     </article>
