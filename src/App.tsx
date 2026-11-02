@@ -9,42 +9,37 @@ import {
 } from "react-router";
 import { Button } from "@heroui/react";
 import { Sprout } from "lucide-react";
+import { PublicNavbar } from "./components";
 import ComponentGallery from "./pages/ComponentGallery";
 import "./styles/collabgarden-ui.css";
 import DirectoryPage from "./pages/directory/DirectoryPage";
+import LoginPage from "./pages/auth/LoginPage";
+import LandingPage from "./pages/landing/LandingPage";
 
-const publicLinks = [
-  ["Home", "/"],
-  ["Discover", "/discover"],
-  ["Login", "/login"],
-  ["Signup", "/signup"],
-] as const;
+const publicNavLinks = [
+  { label: "Home", to: "/" },
+  { label: "Discover", to: "/discover" },
+];
 
 // Public website. No development sidebar.
 function PublicLayout() {
-  return (
-    <>
-      <header>
-        <strong>CollabGarden</strong>
+  const { pathname } = useLocation();
+  const landing = pathname === "/";
 
-        <nav className="public-nav" aria-label="Public">
-          {publicLinks.map(([label, url]) => (
-            <NavLink
-              key={url}
-              end
-              to={url}
-              className={({ isActive }) => (isActive ? "active" : "")}
-            >
-              {label}
-            </NavLink>
-          ))}
-        </nav>
+  return (
+    <div className={landing ? "min-h-screen bg-[#f8f8f0]" : undefined}>
+      <header className="site-header">
+        <PublicNavbar
+          links={publicNavLinks}
+          account={{ label: "Login", to: "/login" }}
+          action={{ label: "Sign up", to: "/signup" }}
+        />
       </header>
 
-      <main>
+      <main className={landing ? "landing-main" : undefined}>
         <Outlet />
       </main>
-    </>
+    </div>
   );
 }
 
@@ -169,13 +164,13 @@ export default function App() {
     <Routes>
       {/* Public website */}
       <Route element={<PublicLayout />}>
-        <Route index element={<Page title="Landing" />} />
+        <Route index element={<LandingPage />} />
 
         <Route path="discover" element={<DirectoryPage />} />
 
         <Route path="creators/:creatorId" element={<CreatorProfile />} />
 
-        <Route path="login" element={<Page title="Log In" />} />
+        <Route path="login" element={<LoginPage />} />
 
         <Route
           path="signup"

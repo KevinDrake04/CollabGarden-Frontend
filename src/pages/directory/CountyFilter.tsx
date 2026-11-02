@@ -9,7 +9,7 @@ type CountyFilterProps = {
 
 const optionStyle = [
   "flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm",
-  "text-[var(--cg-muted)] hover:bg-gray-100",
+  "text-[var(--cg-muted)] hover:bg-[var(--cg-background)]",
   "data-[selected=true]:bg-[var(--cg-background)]",
   "data-[selected=true]:font-semibold data-[selected=true]:text-[var(--cg-primary-dark)]",
 ].join(" ");
@@ -38,7 +38,7 @@ export default function CountyFilter({ options, selected, onChange }: CountyFilt
 
   return (
     <div className="min-w-0 space-y-1.5">
-      <span id="county-label" className="block text-sm font-medium">County</span>
+      <span id="county-label" className="block text-sm font-medium text-[var(--cg-text)]">County</span>
 
       <details
         ref={menuRef}
@@ -49,7 +49,7 @@ export default function CountyFilter({ options, selected, onChange }: CountyFilt
       >
         <summary
           aria-labelledby="county-label county-value"
-          className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-xl border border-[var(--cg-border)] bg-white px-3 py-2 text-sm shadow-sm [&::-webkit-details-marker]:hidden"
+          className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-xl border border-[var(--cg-border)] bg-white px-3 py-2 text-sm [&::-webkit-details-marker]:hidden"
         >
           <span id="county-value" className="min-w-0 truncate">{label}</span>
           <ChevronDown size={16} className="shrink-0 group-open:rotate-180" aria-hidden="true" />
