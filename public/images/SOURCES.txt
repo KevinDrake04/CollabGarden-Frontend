@@ -1,0 +1,8 @@
+cafe-collab.jpg
+Title: A group of friends at a coffee shop
+Photographer: Brooke Cagle
+Page: https://unsplash.com/photos/a-group-of-friends-at-a-coffee-shop--uHVRvDr7pg
+License: Unsplash License (https://unsplash.com/license)
+Notes: Free to use, including commercially. Attribution is appreciated and not required.
+Used on the landing page hero and the login page. Temporary until final photography is chosen.
+Downloaded crop: 1400px wide JPEG.

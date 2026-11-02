@@ -83,11 +83,11 @@ main {
   color: #777;
   text-transform: uppercase;
 }
-h1 {
+main:not(.landing-main) h1 {
   font-size: 32px;
   margin: 0;
 }
-main p:not(.eyebrow) {
+main:not(.landing-main) p:not(.eyebrow) {
   color: #66736b;
 }
 @media (max-width: 700px) {
@@ -111,4 +111,23 @@ main p:not(.eyebrow) {
   main {
     padding: 32px 20px;
   }
+}
+
+/* Public site header. Development pages keep the plain header rules above. */
+header.site-header {
+  display: block;
+  gap: 0;
+  padding: 0;
+  border-bottom: 0;
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+header.site-header span {
+  color: inherit;
+  font-size: inherit;
+}
+main.landing-main {
+  padding: 0;
 }

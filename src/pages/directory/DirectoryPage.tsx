@@ -35,13 +35,13 @@ function readFilters(search: string): Filters {
 
 function DirectoryCard({ entry }: { entry: DirectoryEntry }) {
   return (
-    <article className="flex min-w-0 items-start gap-3 rounded-2xl border border-[var(--cg-border)] bg-white p-4">
+    <article className="flex min-w-0 items-center gap-4 rounded-2xl border border-[var(--cg-border)] bg-white p-5 shadow-sm transition hover:border-[var(--cg-accent)] hover:shadow-md">
       <AppAvatar name={entry.name} imageUrl={entry.imageUrl} size="lg" />
-      <div className="min-w-0">
-        <h2 className="break-words text-lg font-semibold">{entry.name}</h2>
-        <p className="text-sm text-[var(--cg-muted)]">{entry.category}</p>
+      <div className="min-w-0 flex-1">
+        <h2 className="break-words text-lg font-semibold text-[var(--cg-text)]">{entry.name}</h2>
+        <p className="mt-1 text-sm text-[var(--cg-muted)]">{entry.category}</p>
         <p className="mt-2 flex items-center gap-1.5 text-sm text-[var(--cg-muted)]">
-          <MapPin size={15} aria-hidden="true" />
+          <MapPin size={15} className="shrink-0 text-[var(--cg-primary)]" aria-hidden="true" />
           {entry.county ? `${entry.county} County, NJ` : "New Jersey"}
         </p>
       </div>
@@ -137,25 +137,30 @@ export default function DirectoryPage() {
     : filters.type === "business" ? "businesses" : "creators";
 
   return (
-    <div className="w-full min-w-0 max-w-5xl space-y-6 text-[var(--cg-text)]">
-      <div>
-        <h1 className="text-3xl font-bold">Explore CollabGarden</h1>
-        <p className="mt-2 text-sm text-[var(--cg-muted)]">
+    <div className="-m-12 min-h-[calc(100dvh-4.5rem)] bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-my-8">
+    <div className="mx-auto w-full min-w-0 max-w-6xl space-y-8 px-4 py-10 text-[var(--cg-text)] md:px-8 md:py-14">
+      <div className="max-w-2xl">
+        <h1 className="font-bold tracking-tight text-[var(--cg-primary-dark)]">Explore CollabGarden</h1>
+        <p className="mt-3 text-base">
           Discover local businesses and creators across New Jersey.
         </p>
       </div>
 
-      <div className="flex gap-1 border-b border-[var(--cg-border)]" role="group" aria-label="Directory type">
+      <div
+        className="inline-flex w-full gap-1 rounded-2xl border border-[var(--cg-border)] bg-white p-1 shadow-sm sm:w-auto"
+        role="group"
+        aria-label="Directory type"
+      >
         {(["business", "creator"] as const).map((type) => (
           <button
             key={type}
             type="button"
             aria-pressed={filters.type === type}
             onClick={() => updateFilters({ type })}
-            className={`border-b-2 px-4 py-3 text-sm font-semibold ${
+            className={`flex-1 rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors sm:flex-none ${
               filters.type === type
-                ? "border-[var(--cg-primary)] text-[var(--cg-primary-dark)]"
-                : "border-transparent text-[var(--cg-muted)]"
+                ? "bg-[var(--cg-primary)] text-white"
+                : "text-[var(--cg-muted)] hover:bg-[var(--cg-background)] hover:text-[var(--cg-primary-dark)]"
             }`}
           >
             {type === "business" ? "Businesses" : "Creators"}
@@ -163,23 +168,25 @@ export default function DirectoryPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-2">
-        <AppSearch
-          label="Search directory"
-          placeholder="Search name or category"
-          value={filters.query}
-          onChange={(query) => updateFilters({ query })}
-        />
-        <CountyFilter
-          options={counties.map((county) => county.name)}
-          selected={filters.counties}
-          onChange={(selected) => updateFilters({ counties: selected })}
-        />
+      <div className="rounded-2xl border border-[var(--cg-border)] bg-white p-4 shadow-sm md:p-5">
+        <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-2">
+          <AppSearch
+            label="Search directory"
+            placeholder="Search name or category"
+            value={filters.query}
+            onChange={(query) => updateFilters({ query })}
+          />
+          <CountyFilter
+            options={counties.map((county) => county.name)}
+            selected={filters.counties}
+            onChange={(selected) => updateFilters({ counties: selected })}
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         {!loading && !error && (
-          <p className="text-sm text-[var(--cg-muted)]" aria-live="polite">
+          <p className="text-sm font-medium" aria-live="polite">
             {visibleResults.length} {countLabel} found
           </p>
         )}
@@ -225,6 +232,7 @@ export default function DirectoryPage() {
           {visibleResults.map((entry) => <DirectoryCard key={entry.id} entry={entry} />)}
         </div>
       )}
+    </div>
     </div>
   );
 }
