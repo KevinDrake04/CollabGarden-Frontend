@@ -245,9 +245,7 @@ export function AppSelect({
               textValue={option.label}
             >
               {option.label}
-              <ListBox.ItemIndicator>
-                <Check size={14} aria-hidden="true" />
-              </ListBox.ItemIndicator>
+              <ListBox.ItemIndicator />
             </ListBox.Item>
           ))}
         </ListBox>

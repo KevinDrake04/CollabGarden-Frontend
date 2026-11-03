@@ -13,10 +13,17 @@ const linkClass =
 const currentClass = "bg-[var(--cg-background)] text-[var(--cg-primary-dark)]";
 const idleClass = "text-[var(--cg-muted)] hover:bg-[var(--cg-background)]";
 
+interface PublicAction {
+  label: string;
+  to: string;
+  onPress?: () => void;
+  expanded?: boolean;
+}
+
 interface PublicNavbarProps {
   links: NavItem[];
   account?: { label: string; to: string };
-  action?: { label: string; to: string };
+  action?: PublicAction;
 }
 
 function accountClass(isActive: boolean) {
@@ -25,6 +32,39 @@ function accountClass(isActive: boolean) {
       ? "text-[var(--cg-primary-dark)]"
       : "text-[var(--cg-text)] hover:text-[var(--cg-primary-dark)]"
   }`;
+}
+
+function PublicActionControl({
+  action,
+  className,
+  onSelect,
+}: {
+  action: PublicAction;
+  className: string;
+  onSelect?: () => void;
+}) {
+  if (action.onPress) {
+    return (
+      <button
+        type="button"
+        className={`${className} cursor-pointer`}
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(action.expanded)}
+        onClick={() => {
+          onSelect?.();
+          action.onPress?.();
+        }}
+      >
+        {action.label}
+      </button>
+    );
+  }
+
+  return (
+    <Link to={action.to} onClick={onSelect} className={className}>
+      {action.label}
+    </Link>
+  );
 }
 
 // Same links in the desktop bar and the mobile menu.
@@ -92,12 +132,10 @@ export function PublicNavbar({ links, account, action }: PublicNavbarProps) {
             </NavLink>
           )}
           {action && (
-            <Link
-              to={action.to}
+            <PublicActionControl
+              action={action}
               className="shrink-0 rounded-xl bg-[var(--cg-primary)] px-4 py-2 text-sm font-semibold text-white no-underline"
-            >
-              {action.label}
-            </Link>
+            />
           )}
         </div>
 
@@ -128,13 +166,11 @@ export function PublicNavbar({ links, account, action }: PublicNavbarProps) {
             </NavLink>
           )}
           {action && (
-            <Link
-              to={action.to}
-              onClick={() => setOpen(false)}
+            <PublicActionControl
+              action={action}
+              onSelect={() => setOpen(false)}
               className="mt-1 rounded-xl bg-[var(--cg-primary)] px-4 py-3 text-center text-sm font-semibold text-white no-underline"
-            >
-              {action.label}
-            </Link>
+            />
           )}
         </nav>
       )}
