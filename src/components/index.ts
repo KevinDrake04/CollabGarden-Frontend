@@ -3,4 +3,5 @@ export * from "./ui/Primitives";
 export * from "./navigation/Navigation";
 export * from "./feedback/Feedback";
 export * from "./marketplace/Cards";
+export * from "./profile/Profile";
 export * from "./CreatorSocialLinks";
