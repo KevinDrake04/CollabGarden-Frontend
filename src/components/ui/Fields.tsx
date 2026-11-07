@@ -1,8 +1,5 @@
-import { type ComponentProps, type HTMLInputTypeAttribute } from "react";
+import { type HTMLInputTypeAttribute } from "react";
 import {
-  Avatar,
-  Button as HeroButton,
-  Chip,
   Description,
   FieldError,
   Input,
@@ -12,11 +9,9 @@ import {
   Select,
   TextArea,
   TextField,
-  ToggleButton,
 } from "@heroui/react";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 
-// Simple wrappers around HeroUI. Tailwind handles layout; colors come from the shared CSS variables.
 export interface FieldProps {
   label: string;
   name?: string;
@@ -29,38 +24,6 @@ export interface FieldProps {
   disabled?: boolean;
   required?: boolean;
   className?: string;
-}
-
-export type AppButtonVariant =
-  | "primary"
-  | "secondary"
-  | "ghost"
-  | "destructive";
-export type AppButtonProps = Omit<
-  ComponentProps<typeof HeroButton>,
-  "variant"
-> & {
-  variant?: AppButtonVariant;
-};
-
-export function AppButton({
-  variant = "primary",
-  className = "",
-  ...props
-}: AppButtonProps) {
-  return (
-    <HeroButton
-      {...props}
-      variant={variant === "destructive" ? "danger" : variant}
-      className={[
-        variant === "primary" ? "bg-[var(--cg-primary)] text-white" : "",
-        variant === "secondary" ? "border-[var(--cg-border)]" : "",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    />
-  );
 }
 
 const labelClass = "text-sm font-medium text-[var(--cg-text)]";
@@ -245,107 +208,11 @@ export function AppSelect({
               textValue={option.label}
             >
               {option.label}
-              <ListBox.ItemIndicator>
-                <Check size={14} aria-hidden="true" />
-              </ListBox.ItemIndicator>
+              <ListBox.ItemIndicator />
             </ListBox.Item>
           ))}
         </ListBox>
       </Select.Popover>
     </Select>
-  );
-}
-
-interface FilterChipProps {
-  label: string;
-  selected: boolean;
-  onChange?: (selected: boolean) => void;
-  disabled?: boolean;
-}
-
-export function FilterChip({
-  label,
-  selected,
-  onChange,
-  disabled = false,
-}: FilterChipProps) {
-  return (
-    <ToggleButton
-      variant="ghost"
-      size="sm"
-      isSelected={selected}
-      onChange={onChange}
-      isDisabled={disabled}
-      className={
-        selected
-          ? "border-[var(--cg-primary)] text-[var(--cg-primary-dark)]"
-          : ""
-      }
-    >
-      {selected && <Check size={14} aria-hidden="true" />}
-      {label}
-    </ToggleButton>
-  );
-}
-
-// Kept for upcoming campaign screens, not part of the current gallery.
-const statusLabels = {
-  draft: "Draft",
-  awaitingCreator: "Awaiting Creator",
-  accepted: "Accepted",
-  paymentFunded: "Payment Funded",
-  inProgress: "Content In Progress",
-  submitted: "Content Submitted",
-  changesRequested: "Changes Requested",
-  approved: "Approved",
-  completed: "Completed",
-} as const;
-
-export type CampaignStatusValue = keyof typeof statusLabels;
-
-const statusColors: Record<
-  CampaignStatusValue,
-  "default" | "accent" | "success" | "warning"
-> = {
-  draft: "default",
-  awaitingCreator: "accent",
-  accepted: "success",
-  paymentFunded: "success",
-  inProgress: "accent",
-  submitted: "accent",
-  changesRequested: "warning",
-  approved: "success",
-  completed: "success",
-};
-
-export function CampaignStatus({ status }: { status: CampaignStatusValue }) {
-  return (
-    <Chip size="sm" variant="soft" color={statusColors[status]}>
-      {statusLabels[status]}
-    </Chip>
-  );
-}
-
-interface AppAvatarProps {
-  name: string;
-  imageUrl?: string;
-  size?: "sm" | "md" | "lg";
-}
-
-export function AppAvatar({ name, imageUrl, size = "md" }: AppAvatarProps) {
-  const initials =
-    name
-      .trim()
-      .split(/\s+/)
-      .filter((part) => /[A-Za-z]/.test(part))
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join("") || "?";
-
-  return (
-    <Avatar size={size} variant="soft" color="accent">
-      {imageUrl && <Avatar.Image src={imageUrl} alt={name} />}
-      <Avatar.Fallback>{initials}</Avatar.Fallback>
-    </Avatar>
   );
 }

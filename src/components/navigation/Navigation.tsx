@@ -6,6 +6,7 @@ export interface NavItem {
   label: string;
   to: string;
   icon?: LucideIcon;
+  end?: boolean;
 }
 
 const linkClass =
@@ -13,10 +14,17 @@ const linkClass =
 const currentClass = "bg-[var(--cg-background)] text-[var(--cg-primary-dark)]";
 const idleClass = "text-[var(--cg-muted)] hover:bg-[var(--cg-background)]";
 
+interface PublicAction {
+  label: string;
+  to: string;
+  onPress?: () => void;
+  expanded?: boolean;
+}
+
 interface PublicNavbarProps {
   links: NavItem[];
   account?: { label: string; to: string };
-  action?: { label: string; to: string };
+  action?: PublicAction;
 }
 
 function accountClass(isActive: boolean) {
@@ -25,6 +33,39 @@ function accountClass(isActive: boolean) {
       ? "text-[var(--cg-primary-dark)]"
       : "text-[var(--cg-text)] hover:text-[var(--cg-primary-dark)]"
   }`;
+}
+
+function PublicActionControl({
+  action,
+  className,
+  onSelect,
+}: {
+  action: PublicAction;
+  className: string;
+  onSelect?: () => void;
+}) {
+  if (action.onPress) {
+    return (
+      <button
+        type="button"
+        className={`${className} cursor-pointer`}
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(action.expanded)}
+        onClick={() => {
+          onSelect?.();
+          action.onPress?.();
+        }}
+      >
+        {action.label}
+      </button>
+    );
+  }
+
+  return (
+    <Link to={action.to} onClick={onSelect} className={className}>
+      {action.label}
+    </Link>
+  );
 }
 
 // Same links in the desktop bar and the mobile menu.
@@ -41,7 +82,7 @@ function PublicLinks({
         <NavLink
           key={item.to}
           to={item.to}
-          end={item.to === "/"}
+          end
           onClick={onSelect}
           className={({ isActive }) =>
             `${linkClass} ${isActive ? currentClass : idleClass}`
@@ -92,12 +133,10 @@ export function PublicNavbar({ links, account, action }: PublicNavbarProps) {
             </NavLink>
           )}
           {action && (
-            <Link
-              to={action.to}
+            <PublicActionControl
+              action={action}
               className="shrink-0 rounded-xl bg-[var(--cg-primary)] px-4 py-2 text-sm font-semibold text-white no-underline"
-            >
-              {action.label}
-            </Link>
+            />
           )}
         </div>
 
@@ -128,13 +167,11 @@ export function PublicNavbar({ links, account, action }: PublicNavbarProps) {
             </NavLink>
           )}
           {action && (
-            <Link
-              to={action.to}
-              onClick={() => setOpen(false)}
+            <PublicActionControl
+              action={action}
+              onSelect={() => setOpen(false)}
               className="mt-1 rounded-xl bg-[var(--cg-primary)] px-4 py-3 text-center text-sm font-semibold text-white no-underline"
-            >
-              {action.label}
-            </Link>
+            />
           )}
         </nav>
       )}
@@ -145,14 +182,20 @@ export function PublicNavbar({ links, account, action }: PublicNavbarProps) {
 interface DashboardSidebarProps {
   links: NavItem[];
   title?: string;
+  expand?: boolean;
 }
 
 export function DashboardSidebar({
   links,
   title = "Workspace",
+  expand = false,
 }: DashboardSidebarProps) {
   return (
-    <div className="flex max-w-60 flex-col gap-1 rounded-xl border border-[var(--cg-border)] bg-white p-3">
+    <div
+      className={`flex flex-col gap-1 rounded-xl border border-[var(--cg-border)] bg-white p-3 ${
+        expand ? "w-full" : "max-w-60"
+      }`}
+    >
       <strong className="px-3 py-2 text-sm">{title}</strong>
       {links.map((item) => {
         const Icon = item.icon;
@@ -160,6 +203,7 @@ export function DashboardSidebar({
           <NavLink
             key={item.to}
             to={item.to}
+            end={item.end}
             className={({ isActive }) =>
               `${linkClass} ${isActive ? currentClass : idleClass}`
             }
@@ -186,6 +230,7 @@ export function MobileBottomNav({ links }: { links: NavItem[] }) {
           <NavLink
             key={item.to}
             to={item.to}
+            end={item.end}
             className={({ isActive }) =>
               `flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg px-1 py-2 text-center text-xs no-underline ${
                 isActive ? currentClass : idleClass

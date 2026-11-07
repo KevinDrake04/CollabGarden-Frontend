@@ -1,3 +1,4 @@
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Navigate,
   NavLink,
@@ -11,15 +12,92 @@ import { Button } from "@heroui/react";
 import { Sprout } from "lucide-react";
 import { PublicNavbar } from "./components";
 import ComponentGallery from "./pages/ComponentGallery";
+import CreatorDeliverablesPage from "./pages/collaborations/CreatorDeliverablesPage";
+import BusinessReviewPage from "./pages/collaborations/BusinessReviewPage";
 import "./styles/collabgarden-ui.css";
 import DirectoryPage from "./pages/directory/DirectoryPage";
-import LoginPage from "./pages/auth/LoginPage";
+import BusinessProfilePage from "./pages/profiles/BusinessProfilePage";
+import CreatorProfilePage from "./pages/profiles/CreatorProfilePage";
+import LoginPage, { LogoutPage } from "./pages/auth/LoginPage";
+import { RoleSelectModal } from "./pages/auth/RoleSelectModal";
+import SignupPage from "./pages/auth/SignupPage";
+import { readSession, refreshSession, watchSession, type Session } from "./pages/auth/session";
 import LandingPage from "./pages/landing/LandingPage";
+import CampaignListPage from "./pages/campaigns/CampaignListPage";
+import NewCampaignPage from "./pages/campaigns/NewCampaignPage";
+import BusinessDashboardPage from "./pages/dashboard/BusinessDashboardPage";
+import CreatorDashboardPage from "./pages/dashboard/CreatorDashboardPage";
+import BusinessDashboard from "./pages/dashboard/BusinessDashboard";
+import CreatorDashboard from "./pages/dashboard/CreatorDashboard";
+import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
+import AdminPrototypePage from "./pages/admin/AdminPrototypePage";
 
-const publicNavLinks = [
-  { label: "Home", to: "/" },
-  { label: "Discover", to: "/discover" },
-];
+function publicNavLinks(session: Session | null) {
+  const links = [
+    { label: "Home", to: "/" },
+    { label: "Discover", to: "/discover" },
+    { label: "Campaigns", to: "/campaigns" },
+  ];
+  if (session?.role === "business") {
+    links.push({ label: "Dashboard", to: "/dashboard/business" });
+  }
+  if (session?.role === "creator") {
+    links.push({ label: "Dashboard", to: "/dashboard/creator" });
+  }
+  return links;
+}
+
+// Shared public header. The dashboard shell adds a page width around the outlet.
+function SiteFrame({
+  className,
+  mainClassName,
+  children,
+}: {
+  className?: string;
+  mainClassName?: string;
+  children: ReactNode;
+}) {
+  const { pathname } = useLocation();
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [session, setSession] = useState<Session | null>(() => readSession());
+
+  useEffect(() => {
+    setSession(readSession());
+    return watchSession(() => setSession(readSession()));
+  }, [pathname]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    refreshSession(controller.signal).catch(() => {
+      // A 401 clears the stored session. Other failures leave it in place.
+    });
+    return () => controller.abort();
+  }, []);
+
+  return (
+    <div className={className}>
+      <header className="site-header">
+        <PublicNavbar
+          links={publicNavLinks(session)}
+          account={session ? { label: "Log out", to: "/logout" } : { label: "Login", to: "/login" }}
+          action={{
+            label: "Sign up",
+            to: "/signup",
+            expanded: roleModalOpen,
+            onPress: () => setRoleModalOpen(true),
+          }}
+        />
+      </header>
+
+      <main className={mainClassName}>{children}</main>
+
+      <RoleSelectModal
+        open={roleModalOpen}
+        onClose={() => setRoleModalOpen(false)}
+      />
+    </div>
+  );
+}
 
 // Public website. No development sidebar.
 function PublicLayout() {
@@ -27,19 +105,26 @@ function PublicLayout() {
   const landing = pathname === "/";
 
   return (
-    <div className={landing ? "min-h-screen bg-[#f8f8f0]" : undefined}>
-      <header className="site-header">
-        <PublicNavbar
-          links={publicNavLinks}
-          account={{ label: "Login", to: "/login" }}
-          action={{ label: "Sign up", to: "/signup" }}
-        />
-      </header>
+    <SiteFrame
+      className={landing ? "min-h-screen bg-[#f8f8f0]" : undefined}
+      mainClassName={landing ? "landing-main" : undefined}
+    >
+      <Outlet />
+    </SiteFrame>
+  );
+}
 
-      <main className={landing ? "landing-main" : undefined}>
+// User-facing dashboards. The Dashboard link appears only for a signed-in business or creator.
+function DashboardShell() {
+  return (
+    <SiteFrame
+      className="min-h-screen bg-[var(--cg-background)]"
+      mainClassName="landing-main"
+    >
+      <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8 md:py-10">
         <Outlet />
-      </main>
-    </div>
+      </div>
+    </SiteFrame>
   );
 }
 
@@ -47,14 +132,26 @@ function PublicLayout() {
 const devSections = [
   {
     title: "Website",
-    links: [["Public website", "/"]],
+    links: [
+      ["Public website", "/"],
+      ["Campaigns", "/campaigns"],
+      ["New campaign", "/campaigns/new"],
+    ],
   },
   {
     title: "Development",
     links: [
       ["Home", "/dev"],
       ["Components", "/dev/components"],
+      ["Creator deliverables", "/dev/collaborations/creator"],
+      ["Business review", "/dev/collaborations/business"],
       ["Dashboard", "/dev/app/dashboard"],
+      ["Business dashboard", "/dev/dashboard/business"],
+      ["Creator dashboard", "/dev/dashboard/creator"],
+      ["Business page", "/dashboard/business"],
+      ["Creator page", "/dashboard/creator"],
+      ["Admin prototype", "/dev/dashboard/admin"],
+      ["Admin dashboard", "/dashboard/admin"],
       ["Campaigns", "/dev/app/campaigns"],
       ["Campaign workspace", "/dev/app/campaigns/demo"],
       ["Opportunities", "/dev/app/opportunities"],
@@ -127,18 +224,6 @@ function Page({ title, note }: { title: string; note?: string }) {
   );
 }
 
-// Temporary creator profile route.
-function CreatorProfile() {
-  const { creatorId } = useParams();
-
-  return (
-    <Page
-      title="Creator Profile"
-      note={`Creator ID: ${creatorId}. Profile details will be added later.`}
-    />
-  );
-}
-
 // Temporary campaign workspace route.
 function CampaignWorkspace() {
   const { campaignId } = useParams();
@@ -162,22 +247,36 @@ function LegacyAppRedirect() {
 export default function App() {
   return (
     <Routes>
+      <Route path="dashboard/admin" element={<AdminDashboardPage />} />
+      <Route path="dashboard/admin/:section" element={<AdminDashboardPage />} />
+
       {/* Public website */}
       <Route element={<PublicLayout />}>
         <Route index element={<LandingPage />} />
 
         <Route path="discover" element={<DirectoryPage />} />
 
-        <Route path="creators/:creatorId" element={<CreatorProfile />} />
+        <Route path="businesses/:id" element={<BusinessProfilePage />} />
+
+        <Route path="creators/:id" element={<CreatorProfilePage />} />
+
+        <Route path="campaigns" element={<CampaignListPage />} />
+
+        <Route path="campaigns/new" element={<NewCampaignPage />} />
 
         <Route path="login" element={<LoginPage />} />
 
-        <Route
-          path="signup"
-          element={<Page title="Sign Up / Role Selection" />}
-        />
+        <Route path="logout" element={<LogoutPage />} />
+
+        <Route path="signup" element={<SignupPage />} />
 
         <Route path="*" element={<Page title="404 — Page Not Found" />} />
+      </Route>
+
+      {/* User-facing dashboards. Demo data only. */}
+      <Route element={<DashboardShell />}>
+        <Route path="dashboard/business" element={<BusinessDashboard />} />
+        <Route path="dashboard/creator" element={<CreatorDashboard />} />
       </Route>
 
       {/* Development workspace */}
@@ -193,6 +292,16 @@ export default function App() {
         />
 
         <Route path="components" element={<ComponentGallery />} />
+
+        <Route path="dashboard/business" element={<BusinessDashboardPage />} />
+
+        <Route path="dashboard/creator" element={<CreatorDashboardPage />} />
+
+        <Route path="collaborations/creator" element={<CreatorDeliverablesPage />} />
+
+        <Route path="collaborations/business" element={<BusinessReviewPage />} />
+
+        <Route path="dashboard/admin" element={<AdminPrototypePage />} />
 
         <Route
           path="app/dashboard"

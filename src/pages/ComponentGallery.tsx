@@ -1,7 +1,21 @@
 import { useState } from "react";
 import { Toast, toast } from "@heroui/react";
-import { Home, LayoutDashboard, MessageCircle, Search } from "lucide-react";
 import {
+  ClipboardCheck,
+  Handshake,
+  Home,
+  LayoutDashboard,
+  Megaphone,
+  MessageCircle,
+  Search,
+  Sparkles,
+  Users,
+} from "lucide-react";
+import {
+  AdminCampaignRow,
+  AdminEmptyState,
+  AdminStatCard,
+  AdminStatusBadge,
   AppAvatar,
   AppButton,
   AppInput,
@@ -9,19 +23,47 @@ import {
   AppSearch,
   AppSelect,
   AppTextarea,
+  CampaignCard,
   ConfirmDialog,
+  CountyList,
   CreatorCard,
   CreatorPackageCard,
+  DashboardEmptyState,
+  DashboardLayout,
   DashboardSidebar,
+  DashboardStatCard,
   EmptyState,
   FilterChip,
+  FoundingMemberCard,
   LoadingSkeleton,
   MapPriceMarker,
   MessageBubble,
   MobileBottomNav,
+  OpportunityCard,
+  PendingAccountCard,
+  ProfileActions,
+  ProfileDetails,
+  ProfileHeader,
+  ProfilePhoto,
   PublicNavbar,
   ReviewCard,
+  DeliverableCard,
+  DeliverableForm,
+  DeliverableReview,
+  DeliverableStatusBadge,
+  deliverableStatuses,
+  draftSubmitBlockReason,
+  reviewBlockReason,
+  type DeliverableSummary,
 } from "../components";
+import CampaignForm, {
+  describeRequirements,
+  emptyCampaignForm,
+  hasCampaignErrors,
+  validateCampaignForm,
+  type CampaignFormErrors,
+  type CampaignFormValues,
+} from "./campaigns/CampaignForm";
 
 const navigationLinks = [
   { label: "Home", to: "/", icon: Home },
@@ -36,11 +78,99 @@ const countyOptions = [
   { value: "Bergen", label: "Bergen" },
 ];
 
+const previewCounties = [
+  { county_id: 1, name: "Essex" },
+  { county_id: 2, name: "Hudson" },
+  { county_id: 3, name: "Bergen" },
+];
+
 const sectionClass = "mt-8 border-t border-[var(--cg-border)] pt-6";
 const headingClass = "mb-4 text-xl font-semibold text-[var(--cg-text)]";
 const rowClass = "mb-4 flex flex-wrap items-center gap-3";
 const gridClass = "grid grid-cols-1 items-start gap-4 md:grid-cols-2";
 const exampleClass = "flex flex-col gap-3";
+
+function SampleDashboardNav({
+  label,
+  items,
+}: {
+  label: string;
+  items: string[];
+}) {
+  return (
+    <nav
+      aria-label={label}
+      className="flex flex-row flex-wrap gap-1 md:flex-col"
+    >
+      {items.map((item, index) => (
+        <span
+          key={item}
+          className={
+            index === 0
+              ? "rounded-lg bg-[var(--cg-background)] px-3 py-2 text-sm font-medium text-[var(--cg-primary-dark)]"
+              : "rounded-lg px-3 py-2 text-sm text-[var(--cg-muted)]"
+          }
+        >
+          {item}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+const sampleCampaign = "Sample Spring Tasting";
+
+const sampleDeliverables: DeliverableSummary[] = [
+  {
+    id: 101,
+    title: "Sample draft story",
+    campaignName: sampleCampaign,
+    status: "draft",
+    description: "Sample draft. This card does not come from the API.",
+    creatorId: 12,
+    creatorName: "Sample Creator",
+    createdAt: "2026-11-01T15:00:00Z",
+    attachments: [{ id: 1, type: "link", url: "https://example.com/sample-draft" }],
+  },
+  {
+    id: 102,
+    title: "Sample submitted photos",
+    campaignName: sampleCampaign,
+    status: "submitted",
+    description: "Sample submission waiting for review.",
+    creatorId: 12,
+    creatorName: "Sample Creator",
+    submittedAt: "2026-11-02T18:30:00Z",
+    createdAt: "2026-11-02T16:00:00Z",
+    attachments: [{ id: 2, type: "image", url: "/images/cafe-collab.jpg" }],
+  },
+  {
+    id: 103,
+    title: "Sample approved post",
+    campaignName: sampleCampaign,
+    status: "approved",
+    description: "Sample deliverable that has already been approved.",
+    creatorId: 12,
+    creatorName: "Sample Creator",
+    submittedAt: "2026-10-20T14:00:00Z",
+    createdAt: "2026-10-18T14:00:00Z",
+    updatedAt: "2026-10-21T14:00:00Z",
+    attachments: [{ id: 3, type: "link", url: "https://example.com/sample-approved" }],
+  },
+  {
+    id: 104,
+    title: "Sample revision request",
+    campaignName: sampleCampaign,
+    status: "revision_requested",
+    description: "Sample deliverable sent back for changes.",
+    creatorId: 12,
+    creatorName: "Sample Creator",
+    submittedAt: "2026-10-28T12:00:00Z",
+    createdAt: "2026-10-27T12:00:00Z",
+    updatedAt: "2026-10-29T12:00:00Z",
+    attachments: [],
+  },
+];
 
 // Preview only. These components do not call the backend or persist data.
 export default function ComponentGallery() {
@@ -50,6 +180,25 @@ export default function ComponentGallery() {
   const [tiktokSelected, setTiktokSelected] = useState(false);
   const [notice, setNotice] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [campaign, setCampaign] = useState<CampaignFormValues>(emptyCampaignForm);
+  const [campaignErrors, setCampaignErrors] = useState<CampaignFormErrors>({});
+  const [campaignNote, setCampaignNote] = useState("");
+  const [submittedComment, setSubmittedComment] = useState("");
+  const [approvedComment, setApprovedComment] = useState("");
+  const [revisionComment, setRevisionComment] = useState("");
+
+  function previewCampaign(action: string) {
+    const nextErrors = validateCampaignForm(campaign);
+    setCampaignErrors(nextErrors);
+    if (hasCampaignErrors(nextErrors)) {
+      setCampaignNote("");
+      return;
+    }
+    const summary = describeRequirements(campaign.requirements);
+    setCampaignNote(
+      `Preview only. ${action} does not call the API. Requirements: ${summary}.`,
+    );
+  }
 
   return (
     <div className="w-full max-w-5xl font-sans text-[var(--cg-text)]">
@@ -230,6 +379,442 @@ export default function ComponentGallery() {
             <MapPriceMarker price="$150" />
             <MapPriceMarker price="$225" active />
           </div>
+        </div>
+      </section>
+
+      {/* 6. Profile components */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Profile Components</h2>
+        <p className="mb-4 text-sm">
+          Sample data only. These examples do not call the API.
+        </p>
+        <div className="flex flex-col gap-8 rounded-2xl bg-[#f8f8f0] p-4 md:p-6">
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Business profile header</h3>
+            <ProfileHeader
+              eyebrow="Business"
+              name="Sample Business"
+              imageUrl="/images/cafe-collab.jpg"
+              summary="Cafe"
+              emptySummary="No category listed."
+              action={
+                <ProfileActions
+                  actions={[{ label: "Contact business", disabled: true, badge: "Coming soon" }]}
+                />
+              }
+            >
+              <div className="mt-4">
+                <div className="mb-2 text-sm text-[var(--cg-muted)]">Counties</div>
+                <CountyList names={["Essex", "Hudson"]} missingLabel="No counties listed." />
+              </div>
+            </ProfileHeader>
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Creator profile header</h3>
+            <ProfileHeader
+              eyebrow="Creator"
+              name="Sample Creator"
+              summary="Food"
+              emptySummary="No niche listed."
+              action={
+                <ProfileActions
+                  actions={[{ label: "Collaborate", disabled: true, badge: "Coming soon" }]}
+                />
+              }
+            >
+              <div className="mt-4">
+                <div className="mb-2 text-sm text-[var(--cg-muted)]">County</div>
+                <CountyList names={["Essex"]} missingLabel="No county listed." />
+              </div>
+              <div className="mt-3 flex items-center gap-1.5 text-sm text-[var(--cg-muted)]">
+                <Users size={15} className="shrink-0 text-[var(--cg-primary)]" aria-hidden="true" />
+                <span>Followers</span>
+                <span className="font-medium text-[var(--cg-text)]">10K-50K</span>
+              </div>
+            </ProfileHeader>
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Profile details</h3>
+            <div className="grid gap-4 lg:grid-cols-5">
+              <div className="lg:col-span-3">
+                <ProfileDetails
+                  title="About"
+                  text="Sample description for a local cafe. This text is not from the API."
+                />
+              </div>
+              <div className="lg:col-span-2">
+                <ProfileDetails title="Collaboration types">
+                  <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+                    {["Dining", "Gifted"].map((label) => (
+                      <li
+                        key={label}
+                        className="rounded-full border border-[var(--cg-border)] bg-[var(--cg-background)] px-3 py-1 text-sm font-medium text-[var(--cg-primary-dark)]"
+                      >
+                        {label}
+                      </li>
+                    ))}
+                  </ul>
+                </ProfileDetails>
+              </div>
+            </div>
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Profile action buttons</h3>
+            <div className="flex flex-wrap items-start gap-3">
+              <ProfileActions
+                actions={[{ label: "Contact business", disabled: true, badge: "Coming soon" }]}
+              />
+              <ProfileActions
+                actions={[{ label: "Collaborate", disabled: true, badge: "Coming soon" }]}
+              />
+              <ProfileActions
+                actions={[{
+                  label: "Edit profile",
+                  onPress: () => setNotice("Edit profile is only a sample action."),
+                }]}
+              />
+            </div>
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Missing image and empty data</h3>
+            <ProfilePhoto name="Sample Business" />
+            <ProfileHeader
+              eyebrow="Business"
+              name="Sample Business"
+              emptySummary="No category listed."
+              action={
+                <ProfileActions
+                  actions={[{ label: "Contact business", disabled: true, badge: "Coming soon" }]}
+                />
+              }
+            >
+              <div className="mt-4">
+                <div className="mb-2 text-sm text-[var(--cg-muted)]">Counties</div>
+                <CountyList names={[]} missingLabel="No counties listed." />
+              </div>
+            </ProfileHeader>
+            <div className="grid gap-4 md:grid-cols-2">
+              <ProfileDetails title="About" emptyLabel="No description yet." />
+              <ProfileDetails title="Collaboration types" emptyLabel="No collaboration types listed." />
+              <ProfileDetails title="Sample posts" emptyLabel="No sample posts yet." />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 7. Dashboard components */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Dashboard Components</h2>
+        <div className="flex flex-col gap-6">
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Business dashboard header</h3>
+            <DashboardLayout
+              title="Business Dashboard"
+              description="Sample header for a local business. Track campaigns and creator collaborations from one place."
+              navigation={
+                <SampleDashboardNav
+                  label="Sample business navigation"
+                  items={["Campaigns", "Messages", "Payments"]}
+                />
+              }
+            />
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Creator dashboard header</h3>
+            <DashboardLayout
+              title="Creator Dashboard"
+              description="Sample header for a local creator. Find collaboration opportunities and active partnerships."
+              navigation={
+                <SampleDashboardNav
+                  label="Sample creator navigation"
+                  items={["Opportunities", "Collaborations", "Messages"]}
+                />
+              }
+            />
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Statistic cards</h3>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <DashboardStatCard
+                label="Active Campaigns"
+                value={4}
+                icon={<Megaphone size={20} aria-hidden="true" />}
+              />
+              <DashboardStatCard
+                label="Collaborations"
+                value={7}
+                icon={<Handshake size={20} aria-hidden="true" />}
+              />
+              <DashboardStatCard
+                label="Opportunities"
+                value={12}
+                icon={<Sparkles size={20} aria-hidden="true" />}
+              />
+            </div>
+          </div>
+
+          <div className={gridClass}>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Active campaign</h3>
+              <CampaignCard
+                title="Sample Fall Menu Launch"
+                description="A sample active campaign promoting a seasonal menu with a local food creator."
+                status="Active"
+                location="Essex County, NJ"
+                budget="Budget $400"
+                date="Due Nov 20"
+                actionLabel="View campaign"
+                onAction={() => setNotice("Sample campaign selected")}
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Draft campaign</h3>
+              <CampaignCard
+                title="Sample Spring Tasting"
+                description="A sample draft campaign that has not been published yet."
+                status="Draft"
+                location="Hudson County, NJ"
+                budget="Budget $250"
+                actionLabel="Edit draft"
+                onAction={() => setNotice("Sample draft selected")}
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Pending collaboration</h3>
+              <CampaignCard
+                title="Sample Weekend Brunch"
+                description="A sample collaboration that is waiting to begin."
+                status="Pending"
+                location="Essex County, NJ"
+                actionLabel="View collaboration"
+                onAction={() =>
+                  setNotice("Sample pending collaboration selected")
+                }
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Completed campaign</h3>
+              <CampaignCard
+                title="Sample Summer Patio Series"
+                description="A sample campaign that has already finished."
+                status="Completed"
+                location="Bergen County, NJ"
+                budget="Budget $300"
+                actionLabel="View summary"
+                onAction={() => setNotice("Sample completed campaign selected")}
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">
+                Creator collaboration opportunity
+              </h3>
+              <OpportunityCard
+                businessName="Sample Cafe"
+                title="Sample Weekend Brunch Feature"
+                description="A sample collaboration opportunity for a local food creator to feature a weekend brunch."
+                location="Essex County, NJ"
+                category="Food"
+                actionLabel="View opportunity"
+                onAction={() => setNotice("Sample opportunity selected")}
+              />
+            </div>
+          </div>
+
+          <div className={gridClass}>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Empty campaigns state</h3>
+              <DashboardEmptyState
+                message="No campaigns yet. This sample empty state appears when a business has not created a campaign."
+                actionLabel="Create campaign"
+                onAction={() => setNotice("Sample create campaign selected")}
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Empty opportunities state</h3>
+              <DashboardEmptyState
+                message="No opportunities yet. This sample empty state appears when there are no collaboration opportunities to show."
+                actionLabel="Browse opportunities"
+                onAction={() => setNotice("Sample browse opportunities selected")}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 8. Campaign form */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Campaign form</h2>
+        <p className="mb-4 text-sm text-[var(--cg-muted)]">
+          Basic example with sample counties. Save Draft and Publish check the
+          structured deliverable requirements and list them here. They do not
+          call the API.
+        </p>
+        {campaignNote && (
+          <div className="mb-4">
+            <AppNotice message={campaignNote} onClose={() => setCampaignNote("")} />
+          </div>
+        )}
+        <CampaignForm
+          values={campaign}
+          errors={campaignErrors}
+          counties={previewCounties}
+          submitting={null}
+          onChange={(next) => {
+            setCampaign(next);
+            setCampaignErrors({});
+            setCampaignNote("");
+          }}
+          onSaveDraft={() => previewCampaign("Save Draft")}
+          onPublish={() => previewCampaign("Publish")}
+        />
+      </section>
+
+      {/* 9. Deliverables. Sample data only. */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Deliverables</h2>
+        <p className="mb-4 text-sm">
+          Sample data for the deliverable components. Nothing in this section calls the API.
+        </p>
+
+        <div className={rowClass}>
+          {deliverableStatuses.map((status) => (
+            <DeliverableStatusBadge key={status} status={status} />
+          ))}
+        </div>
+
+        <div className="mt-5 flex flex-col gap-4">
+          {sampleDeliverables.map((deliverable) => {
+            const reason = draftSubmitBlockReason(deliverable.status);
+            return (
+              <DeliverableCard key={deliverable.id} deliverable={deliverable}>
+                <div className="flex flex-col items-start gap-2 border-t border-[var(--cg-border)] pt-3">
+                  <AppButton
+                    isDisabled={Boolean(reason)}
+                    aria-label={`Submit ${deliverable.title}`}
+                    onPress={() => setNotice("Sample only. Submit was not sent to the API.")}
+                  >
+                    Submit
+                  </AppButton>
+                  {reason && <p className="text-sm">{reason}</p>}
+                </div>
+              </DeliverableCard>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 max-w-3xl">
+          <h3 className="mb-3 text-sm font-semibold">Sample deliverable form</h3>
+          <DeliverableForm
+            initialValues={{
+              campaignId: "sample-campaign",
+              title: "Sample tasting reel",
+              description: "A short reel from the sample campaign.",
+              attachments: [
+                { key: "sample-link", type: "link", url: "https://example.com/sample-reel" },
+              ],
+            }}
+            campaigns={[{ value: "sample-campaign", label: sampleCampaign }]}
+            onSaveDraft={() => setNotice("Sample only. Save draft was not sent to the API.")}
+            onSubmit={() => setNotice("Sample only. Submit was not sent to the API.")}
+          />
+        </div>
+
+        <div className="mt-6 flex flex-col gap-4">
+          <h3 className="text-sm font-semibold">Sample review, submitted</h3>
+          <DeliverableReview
+            deliverable={sampleDeliverables[1]}
+            comment={submittedComment}
+            onCommentChange={setSubmittedComment}
+            onApprove={() => setNotice("Sample only. Approve was not sent to the API.")}
+            onRequestRevision={() => setNotice("Sample only. The revision request was not sent to the API.")}
+          />
+
+          <h3 className="text-sm font-semibold">Sample review, approved</h3>
+          <DeliverableReview
+            deliverable={sampleDeliverables[2]}
+            comment={approvedComment}
+            onCommentChange={setApprovedComment}
+            onApprove={() => setNotice("Sample only. Approve was not sent to the API.")}
+            onRequestRevision={() => setNotice("Sample only. The revision request was not sent to the API.")}
+            blockedReason={reviewBlockReason("approved")}
+          />
+
+          <h3 className="text-sm font-semibold">Sample review, revision requested</h3>
+          <DeliverableReview
+            deliverable={sampleDeliverables[3]}
+            comment={revisionComment}
+            onCommentChange={setRevisionComment}
+            onApprove={() => setNotice("Sample only. Approve was not sent to the API.")}
+            onRequestRevision={() => setNotice("Sample only. The revision request was not sent to the API.")}
+            blockedReason={reviewBlockReason("revision_requested")}
+          />
+        </div>
+      </section>
+
+      {/* 10. Administration */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Administration</h2>
+        <p className="mb-4 text-sm text-[var(--cg-muted)]">
+          Sample records for the admin components. Nothing here is sent to the API.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <AdminStatCard
+            label="Pending approvals"
+            value={2}
+            detail="Sample count"
+            icon={<ClipboardCheck size={18} aria-hidden="true" />}
+          />
+          <AdminStatCard label="Open campaigns" value={1} detail="Sample count" />
+        </div>
+        <div className={`${rowClass} mt-4`}>
+          <AdminStatusBadge status="pending" />
+          <AdminStatusBadge status="approved" />
+          <AdminStatusBadge status="suspended" />
+          <AdminStatusBadge status="waiting" />
+          <AdminStatusBadge status="invited" />
+          <AdminStatusBadge status="open" />
+          <AdminStatusBadge status="closed" />
+        </div>
+        <div className="mt-4 grid gap-4">
+          <PendingAccountCard
+            name="Sample Cafe"
+            detail="Business · Account 9001"
+            status="pending"
+            actions={
+              <AppButton onPress={() => setNotice("Sample only. Nothing was sent.")}>
+                Approve
+              </AppButton>
+            }
+          />
+          <FoundingMemberCard
+            name="Sample Priya Shah"
+            details={["Creator · Essex · priya@example.com"]}
+            status="waiting"
+            note="Sample review note"
+          />
+          <AdminCampaignRow
+            name="Sample Spring Tasting"
+            detail="Sample Cafe · Paid · May 1, 2026 - May 31, 2026 · Essex"
+            status="open"
+            action={
+              <AppButton variant="secondary" isDisabled aria-describedby="gallery-campaign-note">
+                Change status
+              </AppButton>
+            }
+          />
+          <p id="gallery-campaign-note" className="text-sm text-[var(--cg-muted)]">
+            The administrator API can list campaigns. Status changes are unavailable on that API.
+          </p>
+          <AdminEmptyState
+            title="No sample records"
+            description="Empty state for an administrator list."
+          />
         </div>
       </section>
 

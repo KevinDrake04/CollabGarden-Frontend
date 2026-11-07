@@ -1,6 +1,7 @@
 import { Card, Chip } from "@heroui/react";
 import { ArrowUpRight, MapPin, Star, Users } from "lucide-react";
-import { AppAvatar, AppButton } from "../ui/Primitives";
+import { AppAvatar } from "../ui/Avatar";
+import { AppButton } from "../ui/Buttons";
 
 const cardClass = "rounded-2xl border border-[var(--cg-border)] bg-white p-5";
 const mutedClass = "text-sm text-[var(--cg-muted)]";

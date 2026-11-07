@@ -1,5 +1,12 @@
 // Import shared components from this file instead of individual folders.
-export * from "./ui/Primitives";
+export * from "./ui/Buttons";
+export * from "./ui/Fields";
+export * from "./ui/Avatar";
 export * from "./navigation/Navigation";
 export * from "./feedback/Feedback";
 export * from "./marketplace/Cards";
+export * from "./profile/Profile";
+export * from "./CreatorSocialLinks";
+export * from "./dashboard/Dashboard";
+export * from "./deliverables/Deliverables";
+export * from "./admin/Admin";

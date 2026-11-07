@@ -3,10 +3,12 @@ import { Link } from "react-router";
 import { MapPin, Search, Users } from "lucide-react";
 import { AppAvatar } from "../../components";
 import {
-  getCounties,
-  getDirectory,
+  isFresh,
+  loadDirectory,
+  profilePath,
+  readDirectory,
   type DirectoryEntry,
-} from "../directory/api";
+} from "../../api/directory";
 
 const counties = ["Essex", "Hudson", "Bergen", "Union"];
 
@@ -102,7 +104,7 @@ function CreatorPreview({ entry }: { entry: DirectoryEntry }) {
           {entry.county ? `${entry.county} County, NJ` : "New Jersey"}
         </p>
         <Link
-          to={`/creators/${entry.id}`}
+          to={profilePath(entry)}
           className="mt-auto inline-flex self-end rounded-lg bg-[var(--cg-primary)] px-3 py-2 text-sm font-semibold text-white no-underline"
         >
           View profile
@@ -112,24 +114,45 @@ function CreatorPreview({ entry }: { entry: DirectoryEntry }) {
   );
 }
 
+function featuredCreators(entries: DirectoryEntry[]) {
+  return entries.filter((entry) => entry.name.trim()).slice(0, 4);
+}
+
 export default function LandingPage() {
-  const [creators, setCreators] = useState<DirectoryEntry[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const savedCreators = readDirectory("creator", [], "");
+  const [creators, setCreators] = useState<DirectoryEntry[]>(() =>
+    savedCreators ? featuredCreators(savedCreators.entries) : [],
+  );
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(
+    savedCreators ? "ready" : "loading",
+  );
+  const [refreshNote, setRefreshNote] = useState("");
 
   useEffect(() => {
-    const controller = new AbortController();
+    const saved = readDirectory("creator", [], "");
+    if (saved && isFresh(saved.savedAt)) return;
 
-    getCounties(controller.signal)
-      .then((countyList) => getDirectory("creator", [], countyList, controller.signal))
+    let active = true;
+    loadDirectory("creator", [])
       .then((entries) => {
-        setCreators(entries.filter((entry) => entry.name.trim()).slice(0, 4));
+        if (!active) return;
+        setCreators(featuredCreators(entries));
         setStatus("ready");
+        setRefreshNote("");
       })
       .catch((error: Error) => {
-        if (error.name !== "AbortError") setStatus("error");
+        if (!active || error.name === "AbortError") return;
+        if (readDirectory("creator", [], "")) {
+          setStatus("ready");
+          setRefreshNote("Couldn't refresh featured creators.");
+        } else {
+          setStatus("error");
+        }
       });
 
-    return () => controller.abort();
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
@@ -149,7 +172,7 @@ export default function LandingPage() {
           </p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <ActionLink to="/discover?type=creator">Find Creators</ActionLink>
-            <ActionLink to="/signup" variant="secondary">
+            <ActionLink to="/signup?role=creator" variant="secondary">
               Join as Creator
             </ActionLink>
           </div>
@@ -213,6 +236,11 @@ export default function LandingPage() {
           </Link>
         </div>
 
+        {refreshNote && status === "ready" && (
+          <div className="mt-4 text-sm text-[var(--cg-error)]" role="status">
+            {refreshNote}
+          </div>
+        )}
         {status === "loading" ? (
           <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading creators">
             {Array.from({ length: 4 }, (_, index) => (
@@ -281,7 +309,7 @@ export default function LandingPage() {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <ActionLink to="/discover?type=creator">Find Creators</ActionLink>
-            <ActionLink to="/signup" variant="secondary">
+            <ActionLink to="/signup?role=creator" variant="secondary">
               Join as Creator
             </ActionLink>
           </div>
