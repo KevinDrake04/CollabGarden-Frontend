@@ -21,6 +21,14 @@ import {
   MobileBottomNav,
   PublicNavbar,
   ReviewCard,
+  DeliverableCard,
+  DeliverableForm,
+  DeliverableReview,
+  DeliverableStatusBadge,
+  deliverableStatuses,
+  draftSubmitBlockReason,
+  reviewBlockReason,
+  type DeliverableSummary,
 } from "../components";
 
 const navigationLinks = [
@@ -42,6 +50,60 @@ const rowClass = "mb-4 flex flex-wrap items-center gap-3";
 const gridClass = "grid grid-cols-1 items-start gap-4 md:grid-cols-2";
 const exampleClass = "flex flex-col gap-3";
 
+const sampleCampaign = "Sample Spring Tasting";
+
+const sampleDeliverables: DeliverableSummary[] = [
+  {
+    id: 101,
+    title: "Sample draft story",
+    campaignName: sampleCampaign,
+    status: "draft",
+    description: "Sample draft. This card does not come from the API.",
+    creatorId: 12,
+    creatorName: "Sample Creator",
+    createdAt: "2026-11-01T15:00:00Z",
+    attachments: [{ id: 1, type: "link", url: "https://example.com/sample-draft" }],
+  },
+  {
+    id: 102,
+    title: "Sample submitted photos",
+    campaignName: sampleCampaign,
+    status: "submitted",
+    description: "Sample submission waiting for review.",
+    creatorId: 12,
+    creatorName: "Sample Creator",
+    submittedAt: "2026-11-02T18:30:00Z",
+    createdAt: "2026-11-02T16:00:00Z",
+    attachments: [{ id: 2, type: "image", url: "/images/cafe-collab.jpg" }],
+  },
+  {
+    id: 103,
+    title: "Sample approved post",
+    campaignName: sampleCampaign,
+    status: "approved",
+    description: "Sample deliverable that has already been approved.",
+    creatorId: 12,
+    creatorName: "Sample Creator",
+    submittedAt: "2026-10-20T14:00:00Z",
+    createdAt: "2026-10-18T14:00:00Z",
+    updatedAt: "2026-10-21T14:00:00Z",
+    attachments: [{ id: 3, type: "link", url: "https://example.com/sample-approved" }],
+  },
+  {
+    id: 104,
+    title: "Sample revision request",
+    campaignName: sampleCampaign,
+    status: "revision_requested",
+    description: "Sample deliverable sent back for changes.",
+    creatorId: 12,
+    creatorName: "Sample Creator",
+    submittedAt: "2026-10-28T12:00:00Z",
+    createdAt: "2026-10-27T12:00:00Z",
+    updatedAt: "2026-10-29T12:00:00Z",
+    attachments: [],
+  },
+];
+
 // Preview only. These components do not call the backend or persist data.
 export default function ComponentGallery() {
   const [search, setSearch] = useState("");
@@ -50,6 +112,9 @@ export default function ComponentGallery() {
   const [tiktokSelected, setTiktokSelected] = useState(false);
   const [notice, setNotice] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [submittedComment, setSubmittedComment] = useState("");
+  const [approvedComment, setApprovedComment] = useState("");
+  const [revisionComment, setRevisionComment] = useState("");
 
   return (
     <div className="w-full max-w-5xl font-sans text-[var(--cg-text)]">
@@ -230,6 +295,88 @@ export default function ComponentGallery() {
             <MapPriceMarker price="$150" />
             <MapPriceMarker price="$225" active />
           </div>
+        </div>
+      </section>
+
+      {/* 6. Deliverables. Sample data only. */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Deliverables</h2>
+        <p className="mb-4 text-sm">
+          Sample data for the deliverable components. Nothing in this section calls the API.
+        </p>
+
+        <div className={rowClass}>
+          {deliverableStatuses.map((status) => (
+            <DeliverableStatusBadge key={status} status={status} />
+          ))}
+        </div>
+
+        <div className="mt-5 flex flex-col gap-4">
+          {sampleDeliverables.map((deliverable) => {
+            const reason = draftSubmitBlockReason(deliverable.status);
+            return (
+              <DeliverableCard key={deliverable.id} deliverable={deliverable}>
+                <div className="flex flex-col items-start gap-2 border-t border-[var(--cg-border)] pt-3">
+                  <AppButton
+                    isDisabled={Boolean(reason)}
+                    aria-label={`Submit ${deliverable.title}`}
+                    onPress={() => setNotice("Sample only. Submit was not sent to the API.")}
+                  >
+                    Submit
+                  </AppButton>
+                  {reason && <p className="text-sm">{reason}</p>}
+                </div>
+              </DeliverableCard>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 max-w-3xl">
+          <h3 className="mb-3 text-sm font-semibold">Sample deliverable form</h3>
+          <DeliverableForm
+            initialValues={{
+              campaignId: "sample-campaign",
+              title: "Sample tasting reel",
+              description: "A short reel from the sample campaign.",
+              attachments: [
+                { key: "sample-link", type: "link", url: "https://example.com/sample-reel" },
+              ],
+            }}
+            campaigns={[{ value: "sample-campaign", label: sampleCampaign }]}
+            onSaveDraft={() => setNotice("Sample only. Save draft was not sent to the API.")}
+            onSubmit={() => setNotice("Sample only. Submit was not sent to the API.")}
+          />
+        </div>
+
+        <div className="mt-6 flex flex-col gap-4">
+          <h3 className="text-sm font-semibold">Sample review, submitted</h3>
+          <DeliverableReview
+            deliverable={sampleDeliverables[1]}
+            comment={submittedComment}
+            onCommentChange={setSubmittedComment}
+            onApprove={() => setNotice("Sample only. Approve was not sent to the API.")}
+            onRequestRevision={() => setNotice("Sample only. The revision request was not sent to the API.")}
+          />
+
+          <h3 className="text-sm font-semibold">Sample review, approved</h3>
+          <DeliverableReview
+            deliverable={sampleDeliverables[2]}
+            comment={approvedComment}
+            onCommentChange={setApprovedComment}
+            onApprove={() => setNotice("Sample only. Approve was not sent to the API.")}
+            onRequestRevision={() => setNotice("Sample only. The revision request was not sent to the API.")}
+            blockedReason={reviewBlockReason("approved")}
+          />
+
+          <h3 className="text-sm font-semibold">Sample review, revision requested</h3>
+          <DeliverableReview
+            deliverable={sampleDeliverables[3]}
+            comment={revisionComment}
+            onCommentChange={setRevisionComment}
+            onApprove={() => setNotice("Sample only. Approve was not sent to the API.")}
+            onRequestRevision={() => setNotice("Sample only. The revision request was not sent to the API.")}
+            blockedReason={reviewBlockReason("revision_requested")}
+          />
         </div>
       </section>
 
