@@ -27,6 +27,12 @@ import {
   PublicNavbar,
   ReviewCard,
 } from "../components";
+import CampaignForm, {
+  emptyCampaignForm,
+  validateCampaignForm,
+  type CampaignFormErrors,
+  type CampaignFormValues,
+} from "./campaigns/CampaignForm";
 
 const navigationLinks = [
   { label: "Home", to: "/", icon: Home },
@@ -39,6 +45,12 @@ const countyOptions = [
   { value: "Essex", label: "Essex" },
   { value: "Hudson", label: "Hudson" },
   { value: "Bergen", label: "Bergen" },
+];
+
+const previewCounties = [
+  { county_id: 1, name: "Essex" },
+  { county_id: 2, name: "Hudson" },
+  { county_id: 3, name: "Bergen" },
 ];
 
 const sectionClass = "mt-8 border-t border-[var(--cg-border)] pt-6";
@@ -55,6 +67,15 @@ export default function ComponentGallery() {
   const [tiktokSelected, setTiktokSelected] = useState(false);
   const [notice, setNotice] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [campaign, setCampaign] = useState<CampaignFormValues>(emptyCampaignForm);
+  const [campaignErrors, setCampaignErrors] = useState<CampaignFormErrors>({});
+  const [campaignNote, setCampaignNote] = useState("");
+
+  function previewCampaign(message: string) {
+    const nextErrors = validateCampaignForm(campaign);
+    setCampaignErrors(nextErrors);
+    setCampaignNote(Object.keys(nextErrors).length === 0 ? message : "");
+  }
 
   return (
     <div className="w-full max-w-5xl font-sans text-[var(--cg-text)]">
@@ -360,6 +381,37 @@ export default function ComponentGallery() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* 7. Campaign form */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Campaign form</h2>
+        <p className="mb-4 text-sm text-[var(--cg-muted)]">
+          Basic example with sample counties. These buttons only check the form.
+          They do not save or publish a campaign.
+        </p>
+        {campaignNote && (
+          <div className="mb-4">
+            <AppNotice message={campaignNote} onClose={() => setCampaignNote("")} />
+          </div>
+        )}
+        <CampaignForm
+          values={campaign}
+          errors={campaignErrors}
+          counties={previewCounties}
+          submitting={null}
+          onChange={(next) => {
+            setCampaign(next);
+            setCampaignErrors({});
+            setCampaignNote("");
+          }}
+          onSaveDraft={() =>
+            previewCampaign("Preview only. Save Draft does not call the API from this page.")
+          }
+          onPublish={() =>
+            previewCampaign("Preview only. Publish does not call the API from this page.")
+          }
+        />
       </section>
 
       <ConfirmDialog

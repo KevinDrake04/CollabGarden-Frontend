@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Navigate,
   NavLink,
@@ -16,14 +16,18 @@ import "./styles/collabgarden-ui.css";
 import DirectoryPage from "./pages/directory/DirectoryPage";
 import BusinessProfilePage from "./pages/profiles/BusinessProfilePage";
 import CreatorProfilePage from "./pages/profiles/CreatorProfilePage";
-import LoginPage from "./pages/auth/LoginPage";
+import LoginPage, { LogoutPage } from "./pages/auth/LoginPage";
 import { RoleSelectModal } from "./pages/auth/RoleSelectModal";
 import SignupPage from "./pages/auth/SignupPage";
+import { readSession, watchSession, type Session } from "./pages/auth/session";
 import LandingPage from "./pages/landing/LandingPage";
+import CampaignListPage from "./pages/campaigns/CampaignListPage";
+import NewCampaignPage from "./pages/campaigns/NewCampaignPage";
 
 const publicNavLinks = [
   { label: "Home", to: "/" },
   { label: "Discover", to: "/discover" },
+  { label: "Campaigns", to: "/campaigns" },
 ];
 
 // Public website. No development sidebar.
@@ -31,13 +35,16 @@ function PublicLayout() {
   const { pathname } = useLocation();
   const landing = pathname === "/";
   const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [session, setSession] = useState<Session | null>(() => readSession());
+
+  useEffect(() => watchSession(() => setSession(readSession())), []);
 
   return (
     <div className={landing ? "min-h-screen bg-[#f8f8f0]" : undefined}>
       <header className="site-header">
         <PublicNavbar
           links={publicNavLinks}
-          account={{ label: "Login", to: "/login" }}
+          account={session ? { label: "Log out", to: "/logout" } : { label: "Login", to: "/login" }}
           action={{
             label: "Sign up",
             to: "/signup",
@@ -63,7 +70,11 @@ function PublicLayout() {
 const devSections = [
   {
     title: "Website",
-    links: [["Public website", "/"]],
+    links: [
+      ["Public website", "/"],
+      ["Campaigns", "/campaigns"],
+      ["New campaign", "/campaigns/new"],
+    ],
   },
   {
     title: "Development",
@@ -176,7 +187,13 @@ export default function App() {
 
         <Route path="creators/:id" element={<CreatorProfilePage />} />
 
+        <Route path="campaigns" element={<CampaignListPage />} />
+
+        <Route path="campaigns/new" element={<NewCampaignPage />} />
+
         <Route path="login" element={<LoginPage />} />
+
+        <Route path="logout" element={<LogoutPage />} />
 
         <Route path="signup" element={<SignupPage />} />
 
