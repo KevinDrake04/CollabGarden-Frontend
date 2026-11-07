@@ -23,6 +23,10 @@ import { readSession, watchSession, type Session } from "./pages/auth/session";
 import LandingPage from "./pages/landing/LandingPage";
 import CampaignListPage from "./pages/campaigns/CampaignListPage";
 import NewCampaignPage from "./pages/campaigns/NewCampaignPage";
+import BusinessDashboardPage from "./pages/dashboard/BusinessDashboardPage";
+import CreatorDashboardPage from "./pages/dashboard/CreatorDashboardPage";
+import BusinessDashboard from "./pages/dashboard/BusinessDashboard";
+import CreatorDashboard from "./pages/dashboard/CreatorDashboard";
 
 const publicNavLinks = [
   { label: "Home", to: "/" },
@@ -66,6 +70,40 @@ function PublicLayout() {
   );
 }
 
+// User-facing dashboards. Not linked from the public navbar.
+function DashboardShell() {
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [session, setSession] = useState<Session | null>(() => readSession());
+
+  useEffect(() => watchSession(() => setSession(readSession())), []);
+
+  return (
+    <div className="min-h-screen bg-[var(--cg-background)]">
+      <header className="site-header">
+        <PublicNavbar
+          links={publicNavLinks}
+          account={session ? { label: "Log out", to: "/logout" } : { label: "Login", to: "/login" }}
+          action={{
+            label: "Sign up",
+            to: "/signup",
+            expanded: roleModalOpen,
+            onPress: () => setRoleModalOpen(true),
+          }}
+        />
+      </header>
+      <main className="landing-main">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8 md:py-10">
+          <Outlet />
+        </div>
+      </main>
+      <RoleSelectModal
+        open={roleModalOpen}
+        onClose={() => setRoleModalOpen(false)}
+      />
+    </div>
+  );
+}
+
 // Temporary development navigation.
 const devSections = [
   {
@@ -82,6 +120,10 @@ const devSections = [
       ["Home", "/dev"],
       ["Components", "/dev/components"],
       ["Dashboard", "/dev/app/dashboard"],
+      ["Business dashboard", "/dev/dashboard/business"],
+      ["Creator dashboard", "/dev/dashboard/creator"],
+      ["Business page", "/dashboard/business"],
+      ["Creator page", "/dashboard/creator"],
       ["Campaigns", "/dev/app/campaigns"],
       ["Campaign workspace", "/dev/app/campaigns/demo"],
       ["Opportunities", "/dev/app/opportunities"],
@@ -200,6 +242,12 @@ export default function App() {
         <Route path="*" element={<Page title="404 — Page Not Found" />} />
       </Route>
 
+      {/* User-facing dashboards. Demo data only. */}
+      <Route element={<DashboardShell />}>
+        <Route path="dashboard/business" element={<BusinessDashboard />} />
+        <Route path="dashboard/creator" element={<CreatorDashboard />} />
+      </Route>
+
       {/* Development workspace */}
       <Route path="dev" element={<DevLayout />}>
         <Route
@@ -213,6 +261,10 @@ export default function App() {
         />
 
         <Route path="components" element={<ComponentGallery />} />
+
+        <Route path="dashboard/business" element={<BusinessDashboardPage />} />
+
+        <Route path="dashboard/creator" element={<CreatorDashboardPage />} />
 
         <Route
           path="app/dashboard"

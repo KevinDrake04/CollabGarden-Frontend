@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { Toast, toast } from "@heroui/react";
-import { Home, LayoutDashboard, MessageCircle, Search, Users } from "lucide-react";
+import {
+  Handshake,
+  Home,
+  LayoutDashboard,
+  Megaphone,
+  MessageCircle,
+  Search,
+  Sparkles,
+  Users,
+} from "lucide-react";
 import {
   AppAvatar,
   AppButton,
@@ -9,17 +18,22 @@ import {
   AppSearch,
   AppSelect,
   AppTextarea,
+  CampaignCard,
   ConfirmDialog,
   CountyList,
   CreatorCard,
   CreatorPackageCard,
+  DashboardEmptyState,
+  DashboardLayout,
   DashboardSidebar,
+  DashboardStatCard,
   EmptyState,
   FilterChip,
   LoadingSkeleton,
   MapPriceMarker,
   MessageBubble,
   MobileBottomNav,
+  OpportunityCard,
   ProfileActions,
   ProfileDetails,
   ProfileHeader,
@@ -58,6 +72,34 @@ const headingClass = "mb-4 text-xl font-semibold text-[var(--cg-text)]";
 const rowClass = "mb-4 flex flex-wrap items-center gap-3";
 const gridClass = "grid grid-cols-1 items-start gap-4 md:grid-cols-2";
 const exampleClass = "flex flex-col gap-3";
+
+function SampleDashboardNav({
+  label,
+  items,
+}: {
+  label: string;
+  items: string[];
+}) {
+  return (
+    <nav
+      aria-label={label}
+      className="flex flex-row flex-wrap gap-1 md:flex-col"
+    >
+      {items.map((item, index) => (
+        <span
+          key={item}
+          className={
+            index === 0
+              ? "rounded-lg bg-[var(--cg-background)] px-3 py-2 text-sm font-medium text-[var(--cg-primary-dark)]"
+              : "rounded-lg px-3 py-2 text-sm text-[var(--cg-muted)]"
+          }
+        >
+          {item}
+        </span>
+      ))}
+    </nav>
+  );
+}
 
 // Preview only. These components do not call the backend or persist data.
 export default function ComponentGallery() {
@@ -383,7 +425,148 @@ export default function ComponentGallery() {
         </div>
       </section>
 
-      {/* 7. Campaign form */}
+      {/* 7. Dashboard components */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Dashboard Components</h2>
+        <div className="flex flex-col gap-6">
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Business dashboard header</h3>
+            <DashboardLayout
+              title="Business Dashboard"
+              description="Sample header for a local business. Track campaigns and creator collaborations from one place."
+              navigation={
+                <SampleDashboardNav
+                  label="Sample business navigation"
+                  items={["Campaigns", "Messages", "Payments"]}
+                />
+              }
+            />
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Creator dashboard header</h3>
+            <DashboardLayout
+              title="Creator Dashboard"
+              description="Sample header for a local creator. Find collaboration opportunities and active partnerships."
+              navigation={
+                <SampleDashboardNav
+                  label="Sample creator navigation"
+                  items={["Opportunities", "Collaborations", "Messages"]}
+                />
+              }
+            />
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Statistic cards</h3>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <DashboardStatCard
+                label="Active Campaigns"
+                value={4}
+                icon={<Megaphone size={20} aria-hidden="true" />}
+              />
+              <DashboardStatCard
+                label="Collaborations"
+                value={7}
+                icon={<Handshake size={20} aria-hidden="true" />}
+              />
+              <DashboardStatCard
+                label="Opportunities"
+                value={12}
+                icon={<Sparkles size={20} aria-hidden="true" />}
+              />
+            </div>
+          </div>
+
+          <div className={gridClass}>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Active campaign</h3>
+              <CampaignCard
+                title="Sample Fall Menu Launch"
+                description="A sample active campaign promoting a seasonal menu with a local food creator."
+                status="Active"
+                location="Essex County, NJ"
+                budget="Budget $400"
+                date="Due Nov 20"
+                actionLabel="View campaign"
+                onAction={() => setNotice("Sample campaign selected")}
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Draft campaign</h3>
+              <CampaignCard
+                title="Sample Spring Tasting"
+                description="A sample draft campaign that has not been published yet."
+                status="Draft"
+                location="Hudson County, NJ"
+                budget="Budget $250"
+                actionLabel="Edit draft"
+                onAction={() => setNotice("Sample draft selected")}
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Pending collaboration</h3>
+              <CampaignCard
+                title="Sample Weekend Brunch"
+                description="A sample collaboration that is waiting to begin."
+                status="Pending"
+                location="Essex County, NJ"
+                actionLabel="View collaboration"
+                onAction={() =>
+                  setNotice("Sample pending collaboration selected")
+                }
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Completed campaign</h3>
+              <CampaignCard
+                title="Sample Summer Patio Series"
+                description="A sample campaign that has already finished."
+                status="Completed"
+                location="Bergen County, NJ"
+                budget="Budget $300"
+                actionLabel="View summary"
+                onAction={() => setNotice("Sample completed campaign selected")}
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">
+                Creator collaboration opportunity
+              </h3>
+              <OpportunityCard
+                businessName="Sample Cafe"
+                title="Sample Weekend Brunch Feature"
+                description="A sample collaboration opportunity for a local food creator to feature a weekend brunch."
+                location="Essex County, NJ"
+                category="Food"
+                actionLabel="View opportunity"
+                onAction={() => setNotice("Sample opportunity selected")}
+              />
+            </div>
+          </div>
+
+          <div className={gridClass}>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Empty campaigns state</h3>
+              <DashboardEmptyState
+                message="No campaigns yet. This sample empty state appears when a business has not created a campaign."
+                actionLabel="Create campaign"
+                onAction={() => setNotice("Sample create campaign selected")}
+              />
+            </div>
+            <div className={exampleClass}>
+              <h3 className="text-sm font-semibold">Empty opportunities state</h3>
+              <DashboardEmptyState
+                message="No opportunities yet. This sample empty state appears when there are no collaboration opportunities to show."
+                actionLabel="Browse opportunities"
+                onAction={() => setNotice("Sample browse opportunities selected")}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 8. Campaign form */}
       <section className={sectionClass}>
         <h2 className={headingClass}>Campaign form</h2>
         <p className="mb-4 text-sm text-[var(--cg-muted)]">
