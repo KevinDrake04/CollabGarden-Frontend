@@ -14,6 +14,8 @@ import { PublicNavbar } from "./components";
 import ComponentGallery from "./pages/ComponentGallery";
 import "./styles/collabgarden-ui.css";
 import DirectoryPage from "./pages/directory/DirectoryPage";
+import BusinessProfilePage from "./pages/profiles/BusinessProfilePage";
+import CreatorProfilePage from "./pages/profiles/CreatorProfilePage";
 import LoginPage from "./pages/auth/LoginPage";
 import { RoleSelectModal } from "./pages/auth/RoleSelectModal";
 import SignupPage from "./pages/auth/SignupPage";
@@ -141,18 +143,6 @@ function Page({ title, note }: { title: string; note?: string }) {
   );
 }
 
-// Temporary creator profile route.
-function CreatorProfile() {
-  const { creatorId } = useParams();
-
-  return (
-    <Page
-      title="Creator Profile"
-      note={`Creator ID: ${creatorId}. Profile details will be added later.`}
-    />
-  );
-}
-
 // Temporary campaign workspace route.
 function CampaignWorkspace() {
   const { campaignId } = useParams();
@@ -182,7 +172,9 @@ export default function App() {
 
         <Route path="discover" element={<DirectoryPage />} />
 
-        <Route path="creators/:creatorId" element={<CreatorProfile />} />
+        <Route path="businesses/:id" element={<BusinessProfilePage />} />
+
+        <Route path="creators/:id" element={<CreatorProfilePage />} />
 
         <Route path="login" element={<LoginPage />} />
 

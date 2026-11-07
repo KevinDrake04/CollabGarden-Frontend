@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Toast, toast } from "@heroui/react";
-import { Home, LayoutDashboard, MessageCircle, Search } from "lucide-react";
+import { Home, LayoutDashboard, MessageCircle, Search, Users } from "lucide-react";
 import {
   AppAvatar,
   AppButton,
@@ -10,6 +10,7 @@ import {
   AppSelect,
   AppTextarea,
   ConfirmDialog,
+  CountyList,
   CreatorCard,
   CreatorPackageCard,
   DashboardSidebar,
@@ -19,6 +20,10 @@ import {
   MapPriceMarker,
   MessageBubble,
   MobileBottomNav,
+  ProfileActions,
+  ProfileDetails,
+  ProfileHeader,
+  ProfilePhoto,
   PublicNavbar,
   ReviewCard,
 } from "../components";
@@ -229,6 +234,130 @@ export default function ComponentGallery() {
           <div className={rowClass}>
             <MapPriceMarker price="$150" />
             <MapPriceMarker price="$225" active />
+          </div>
+        </div>
+      </section>
+
+      {/* 6. Profile components */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Profile Components</h2>
+        <p className="mb-4 text-sm">
+          Sample data only. These examples do not call the API.
+        </p>
+        <div className="flex flex-col gap-8 rounded-2xl bg-[#f8f8f0] p-4 md:p-6">
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Business profile header</h3>
+            <ProfileHeader
+              eyebrow="Business"
+              name="Sample Business"
+              imageUrl="/images/cafe-collab.jpg"
+              summary="Cafe"
+              emptySummary="No category listed."
+              action={
+                <ProfileActions
+                  actions={[{ label: "Contact business", disabled: true, badge: "Coming soon" }]}
+                />
+              }
+            >
+              <div className="mt-4">
+                <div className="mb-2 text-sm text-[var(--cg-muted)]">Counties</div>
+                <CountyList names={["Essex", "Hudson"]} missingLabel="No counties listed." />
+              </div>
+            </ProfileHeader>
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Creator profile header</h3>
+            <ProfileHeader
+              eyebrow="Creator"
+              name="Sample Creator"
+              summary="Food"
+              emptySummary="No niche listed."
+              action={
+                <ProfileActions
+                  actions={[{ label: "Collaborate", disabled: true, badge: "Coming soon" }]}
+                />
+              }
+            >
+              <div className="mt-4">
+                <div className="mb-2 text-sm text-[var(--cg-muted)]">County</div>
+                <CountyList names={["Essex"]} missingLabel="No county listed." />
+              </div>
+              <div className="mt-3 flex items-center gap-1.5 text-sm text-[var(--cg-muted)]">
+                <Users size={15} className="shrink-0 text-[var(--cg-primary)]" aria-hidden="true" />
+                <span>Followers</span>
+                <span className="font-medium text-[var(--cg-text)]">10K-50K</span>
+              </div>
+            </ProfileHeader>
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Profile details</h3>
+            <div className="grid gap-4 lg:grid-cols-5">
+              <div className="lg:col-span-3">
+                <ProfileDetails
+                  title="About"
+                  text="Sample description for a local cafe. This text is not from the API."
+                />
+              </div>
+              <div className="lg:col-span-2">
+                <ProfileDetails title="Collaboration types">
+                  <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+                    {["Dining", "Gifted"].map((label) => (
+                      <li
+                        key={label}
+                        className="rounded-full border border-[var(--cg-border)] bg-[var(--cg-background)] px-3 py-1 text-sm font-medium text-[var(--cg-primary-dark)]"
+                      >
+                        {label}
+                      </li>
+                    ))}
+                  </ul>
+                </ProfileDetails>
+              </div>
+            </div>
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Profile action buttons</h3>
+            <div className="flex flex-wrap items-start gap-3">
+              <ProfileActions
+                actions={[{ label: "Contact business", disabled: true, badge: "Coming soon" }]}
+              />
+              <ProfileActions
+                actions={[{ label: "Collaborate", disabled: true, badge: "Coming soon" }]}
+              />
+              <ProfileActions
+                actions={[{
+                  label: "Edit profile",
+                  onPress: () => setNotice("Edit profile is only a sample action."),
+                }]}
+              />
+            </div>
+          </div>
+
+          <div className={exampleClass}>
+            <h3 className="text-sm font-semibold">Missing image and empty data</h3>
+            <ProfilePhoto name="Sample Business" />
+            <ProfileHeader
+              eyebrow="Business"
+              name="Sample Business"
+              emptySummary="No category listed."
+              action={
+                <ProfileActions
+                  actions={[{ label: "Contact business", disabled: true, badge: "Coming soon" }]}
+                />
+              }
+            >
+              <div className="mt-4">
+                <div className="mb-2 text-sm text-[var(--cg-muted)]">Counties</div>
+                <CountyList names={[]} missingLabel="No counties listed." />
+              </div>
+            </ProfileHeader>
+            <div className="grid gap-4 md:grid-cols-2">
+              <ProfileDetails title="About" emptyLabel="No description yet." />
+              <ProfileDetails title="Collaboration types" emptyLabel="No collaboration types listed." />
+              <ProfileDetails title="Sample posts" emptyLabel="No sample posts yet." />
+            </div>
           </div>
         </div>
       </section>
