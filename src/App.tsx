@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Navigate,
   NavLink,
@@ -14,6 +15,8 @@ import ComponentGallery from "./pages/ComponentGallery";
 import "./styles/collabgarden-ui.css";
 import DirectoryPage from "./pages/directory/DirectoryPage";
 import LoginPage from "./pages/auth/LoginPage";
+import { RoleSelectModal } from "./pages/auth/RoleSelectModal";
+import SignupPage from "./pages/auth/SignupPage";
 import LandingPage from "./pages/landing/LandingPage";
 
 const publicNavLinks = [
@@ -25,6 +28,7 @@ const publicNavLinks = [
 function PublicLayout() {
   const { pathname } = useLocation();
   const landing = pathname === "/";
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
 
   return (
     <div className={landing ? "min-h-screen bg-[#f8f8f0]" : undefined}>
@@ -32,13 +36,23 @@ function PublicLayout() {
         <PublicNavbar
           links={publicNavLinks}
           account={{ label: "Login", to: "/login" }}
-          action={{ label: "Sign up", to: "/signup" }}
+          action={{
+            label: "Sign up",
+            to: "/signup",
+            expanded: roleModalOpen,
+            onPress: () => setRoleModalOpen(true),
+          }}
         />
       </header>
 
       <main className={landing ? "landing-main" : undefined}>
         <Outlet />
       </main>
+
+      <RoleSelectModal
+        open={roleModalOpen}
+        onClose={() => setRoleModalOpen(false)}
+      />
     </div>
   );
 }
@@ -172,10 +186,7 @@ export default function App() {
 
         <Route path="login" element={<LoginPage />} />
 
-        <Route
-          path="signup"
-          element={<Page title="Sign Up / Role Selection" />}
-        />
+        <Route path="signup" element={<SignupPage />} />
 
         <Route path="*" element={<Page title="404 — Page Not Found" />} />
       </Route>

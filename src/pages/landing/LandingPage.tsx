@@ -149,7 +149,7 @@ export default function LandingPage() {
           </p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <ActionLink to="/discover?type=creator">Find Creators</ActionLink>
-            <ActionLink to="/signup" variant="secondary">
+            <ActionLink to="/signup?role=creator" variant="secondary">
               Join as Creator
             </ActionLink>
           </div>
@@ -281,7 +281,7 @@ export default function LandingPage() {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <ActionLink to="/discover?type=creator">Find Creators</ActionLink>
-            <ActionLink to="/signup" variant="secondary">
+            <ActionLink to="/signup?role=creator" variant="secondary">
               Join as Creator
             </ActionLink>
           </div>
