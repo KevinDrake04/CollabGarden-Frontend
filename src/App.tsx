@@ -12,6 +12,8 @@ import { Button } from "@heroui/react";
 import { Sprout } from "lucide-react";
 import { PublicNavbar } from "./components";
 import ComponentGallery from "./pages/ComponentGallery";
+import CreatorDeliverablesPage from "./pages/collaborations/CreatorDeliverablesPage";
+import BusinessReviewPage from "./pages/collaborations/BusinessReviewPage";
 import "./styles/collabgarden-ui.css";
 import DirectoryPage from "./pages/directory/DirectoryPage";
 import BusinessProfilePage from "./pages/profiles/BusinessProfilePage";
@@ -119,6 +121,8 @@ const devSections = [
     links: [
       ["Home", "/dev"],
       ["Components", "/dev/components"],
+      ["Creator deliverables", "/dev/collaborations/creator"],
+      ["Business review", "/dev/collaborations/business"],
       ["Dashboard", "/dev/app/dashboard"],
       ["Business dashboard", "/dev/dashboard/business"],
       ["Creator dashboard", "/dev/dashboard/creator"],
@@ -265,6 +269,10 @@ export default function App() {
         <Route path="dashboard/business" element={<BusinessDashboardPage />} />
 
         <Route path="dashboard/creator" element={<CreatorDashboardPage />} />
+
+        <Route path="collaborations/creator" element={<CreatorDeliverablesPage />} />
+
+        <Route path="collaborations/business" element={<BusinessReviewPage />} />
 
         <Route
           path="app/dashboard"
