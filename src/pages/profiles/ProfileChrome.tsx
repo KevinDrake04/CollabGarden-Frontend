@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { AppButton, AppNotice, EmptyState, LoadingSkeleton } from "../../components";
 
@@ -24,6 +24,23 @@ export function ProfilePage({ children }: { children: ReactNode }) {
       </div>
     </div>
   );
+}
+
+// Only a same-app Discover URL from the previous navigation is trusted.
+// A direct profile visit has no state and uses the caller's fallback.
+function discoverReturnPath(state: unknown, fallback: string) {
+  if (!state || typeof state !== "object" || !("discoverFrom" in state)) return fallback;
+  const candidate = state.discoverFrom;
+  if (typeof candidate !== "string" || candidate.length > 2048) return fallback;
+  if (!candidate.startsWith("/discover") || candidate.startsWith("//")) return fallback;
+  if (candidate.includes("\\") || candidate.includes("://")) return fallback;
+  const path = candidate.split(/[?#]/, 1)[0];
+  return path === "/discover" ? candidate : fallback;
+}
+
+export function useDiscoverReturn(fallback: string) {
+  const { state } = useLocation();
+  return discoverReturnPath(state, fallback);
 }
 
 export function BackToDiscover({ to }: { to: string }) {

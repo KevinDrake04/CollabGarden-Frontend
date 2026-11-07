@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 import { ArrowUpRight, MapPin } from "lucide-react";
 import {
   AppAvatar,
@@ -78,9 +78,12 @@ function prefetchOtherTab(type: DirectoryType, selectedCounties: string[]) {
 }
 
 function DirectoryCard({ entry }: { entry: DirectoryEntry }) {
+  const location = useLocation();
+
   return (
     <Link
       to={profilePath(entry)}
+      state={{ discoverFrom: `${location.pathname}${location.search}${location.hash}` }}
       className="flex min-w-0 items-center gap-4 rounded-2xl border border-[var(--cg-border)] bg-white p-5 text-[var(--cg-text)] no-underline shadow-sm transition hover:border-[var(--cg-accent)] hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cg-primary)]"
     >
       <AppAvatar name={entry.name} imageUrl={entry.imageUrl} size="lg" />

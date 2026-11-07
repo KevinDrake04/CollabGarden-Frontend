@@ -23,6 +23,7 @@ import {
   ProfileStatus,
   isAbortError,
   parseProfileId,
+  useDiscoverReturn,
   type ProfileLoadStatus,
 } from "./ProfileChrome";
 
@@ -131,6 +132,7 @@ function CreatorProfile({
 
 export default function CreatorProfilePage() {
   const { id: idParam } = useParams();
+  const discoverTo = useDiscoverReturn("/discover?type=creator");
   const routeId = parseProfileId(idParam);
   const initial = routeId ? readCreator(routeId) : null;
   const [trackedId, setTrackedId] = useState(routeId);
@@ -198,8 +200,6 @@ export default function CreatorProfilePage() {
       active = false;
     };
   }, [routeId, retry]);
-
-  const discoverTo = "/discover?type=creator";
 
   return (
     <ProfilePage>

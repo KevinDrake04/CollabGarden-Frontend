@@ -22,6 +22,7 @@ import {
   ProfileStatus,
   isAbortError,
   parseProfileId,
+  useDiscoverReturn,
   type ProfileLoadStatus,
 } from "./ProfileChrome";
 
@@ -106,6 +107,7 @@ function BusinessProfile({
 
 export default function BusinessProfilePage() {
   const { id: idParam } = useParams();
+  const discoverTo = useDiscoverReturn("/discover");
   const routeId = parseProfileId(idParam);
   const initial = routeId ? readBusiness(routeId) : null;
   const [trackedId, setTrackedId] = useState(routeId);
@@ -173,8 +175,6 @@ export default function BusinessProfilePage() {
       active = false;
     };
   }, [routeId, retry]);
-
-  const discoverTo = "/discover";
 
   return (
     <ProfilePage>
