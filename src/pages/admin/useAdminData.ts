@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getCounties, type County } from "../directory/api";
+import { getCounties, type County } from "../../api/directory";
 import {
   AdminApiError,
   getAccount,
@@ -17,7 +17,7 @@ import {
   type WaitlistEntry,
   type WaitlistQuery,
   type WaitlistSort,
-} from "./api";
+} from "../../api/admin";
 
 export type Resource<T> = {
   status: "loading" | "ready" | "error";

@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AppButton, AppNotice, LoadingSkeleton } from "../../components";
 import { readSession, watchSession, type Session } from "../auth/session";
-import { getCounties, type County } from "../directory/api";
+import { getCounties, type County } from "../../api/directory";
 import {
   CampaignApiError,
   submitCampaign,
   type Campaign,
   type CampaignInput,
   type OfferType,
-} from "./api";
+} from "../../api/campaigns";
 import CampaignForm, {
   emptyCampaignForm,
   validateCampaignForm,

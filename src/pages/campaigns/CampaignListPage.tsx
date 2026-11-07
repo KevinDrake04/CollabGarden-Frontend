@@ -3,8 +3,8 @@ import { Link } from "react-router";
 import { Chip } from "@heroui/react";
 import { Calendar, MapPin } from "lucide-react";
 import { AppAvatar, AppButton, AppNotice, EmptyState, LoadingSkeleton } from "../../components";
-import { getCounties, type County } from "../directory/api";
-import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign, type OfferType } from "./api";
+import { getCounties, type County } from "../../api/directory";
+import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign, type OfferType } from "../../api/campaigns";
 
 const offerLabels: Record<OfferType, string> = {
   gifted: "Gifted",

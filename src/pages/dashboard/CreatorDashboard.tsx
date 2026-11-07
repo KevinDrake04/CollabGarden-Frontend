@@ -170,8 +170,14 @@ export default function CreatorDashboard() {
           <section id="opportunities" className="scroll-mt-24">
             <SectionHeading
               title="Available Opportunities"
-              text="Three example opportunities. Viewing details and applying are coming soon, so those buttons are disabled."
+              text="These cards are examples. Applying from a sample card is not available."
             />
+            <Link
+              to="/campaigns"
+              className="mb-4 inline-flex text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
+            >
+              Browse open campaigns
+            </Link>
             <div className="grid grid-cols-1 gap-4">
               {sampleOpportunities.map((opportunity) => (
                 <OpportunityCard
@@ -232,13 +238,23 @@ export default function CreatorDashboard() {
             >
               Quick actions
             </h2>
-            <div className="mt-4 flex flex-col items-start gap-1">
-              <Link to="/discover?type=business" className={linkClass}>
-                Discover businesses
-              </Link>
-              <span className="text-xs text-[var(--cg-muted)]">
-                Opens the business directory
-              </span>
+            <div className="mt-4 flex flex-col items-start gap-4">
+              <div className="flex flex-col gap-1">
+                <Link to="/campaigns" className={linkClass}>
+                  Browse open campaigns
+                </Link>
+                <span className="text-xs text-[var(--cg-muted)]">
+                  Opens the public campaign list
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Link to="/discover?type=business" className={linkClass}>
+                  Discover businesses
+                </Link>
+                <span className="text-xs text-[var(--cg-muted)]">
+                  Opens the business directory
+                </span>
+              </div>
             </div>
           </section>
         </aside>

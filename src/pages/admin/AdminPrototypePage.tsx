@@ -12,7 +12,7 @@ import {
   PendingAccountCard,
   adminStatusLabel,
 } from "../../components";
-import { messageFromApiBody } from "./api";
+import { messageFromApiBody } from "../../api/admin";
 
 type Section = "overview" | "approvals" | "founding" | "campaigns" | "accounts";
 type Role = "signed-out" | "business" | "creator" | "administrator";

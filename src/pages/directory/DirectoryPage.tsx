@@ -20,7 +20,7 @@ import {
   type County,
   type DirectoryEntry,
   type DirectoryType,
-} from "./api";
+} from "../../api/directory";
 import CountyFilter from "./CountyFilter";
 
 type Filters = {

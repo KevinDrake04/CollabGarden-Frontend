@@ -19,7 +19,7 @@ import {
   upsertDeliverable,
   type CollaborationWorkspace,
   type Deliverable,
-} from "./api";
+} from "../../api/collaborations";
 
 type ViewState =
   | { kind: "loading" }

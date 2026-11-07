@@ -3,11 +3,12 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { InputGroup, Label, TextField } from "@heroui/react";
 import { AppButton, AppInput, AppNotice } from "../../components";
-import { AuthError, clearSession, login, writeSession } from "./session";
+import { AuthError, login } from "../../api/auth";
+import { clearSession, writeSession } from "./session";
 
 function nextPath(value: unknown, role: "business" | "creator") {
   if (typeof value === "string" && value.startsWith("/") && !value.startsWith("//")) return value;
-  return role === "business" ? "/campaigns/new" : "/campaigns";
+  return role === "business" ? "/dashboard/business" : "/dashboard/creator";
 }
 
 export function LogoutPage() {

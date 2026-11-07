@@ -1,6 +1,7 @@
 import { type ReactNode, useRef, useState } from "react";
 import { Card, Chip } from "@heroui/react";
-import { AppButton, AppInput, AppSelect, AppTextarea, type SelectOption } from "../ui/Primitives";
+import { AppButton } from "../ui/Buttons";
+import { AppInput, AppSelect, AppTextarea, type SelectOption } from "../ui/Fields";
 import { AppNotice } from "../feedback/Feedback";
 
 const cardClass = "rounded-2xl border border-[var(--cg-border)] bg-white p-5";

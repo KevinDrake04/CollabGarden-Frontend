@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { MapPin } from "lucide-react";
-import { AppAvatar, AppButton } from "../ui/Primitives";
+import { AppAvatar } from "../ui/Avatar";
+import { AppButton } from "../ui/Buttons";
 
 export type ProfileActionItem = {
   label: string;

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Modal } from "@heroui/react";
 import { Check, X } from "lucide-react";
-import { AppButton, AppInput } from "./ui/Primitives";
+import { AppButton } from "./ui/Buttons";
+import { AppInput } from "./ui/Fields";
 
 // Controlled profile links. Parents own the list so signup, Google onboarding,
 // and profile editing can share this component without storing anything here.

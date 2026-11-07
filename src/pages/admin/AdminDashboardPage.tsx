@@ -29,7 +29,7 @@ import {
   adminStatusLabel,
   type NavItem,
 } from "../../components";
-import type { County } from "../directory/api";
+import type { County } from "../../api/directory";
 import {
   AdminApiError,
   setAccountStatus,
@@ -44,7 +44,7 @@ import {
   type WaitlistQuery,
   type WaitlistSort,
   type WaitlistStatus,
-} from "./api";
+} from "../../api/admin";
 import {
   accountTypeLabel,
   businessName,
@@ -530,7 +530,10 @@ export default function AdminDashboardPage() {
   return (
     <div className="min-h-screen bg-[#f8f8f0] text-[var(--cg-text)]">
       <header className="site-header">
-        <PublicNavbar links={publicLinks} account={{ label: "Login", to: "/login" }} />
+        <PublicNavbar
+          links={publicLinks}
+          account={session ? { label: "Log out", to: "/logout" } : { label: "Login", to: "/login" }}
+        />
       </header>
 
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row md:px-8 md:py-8">

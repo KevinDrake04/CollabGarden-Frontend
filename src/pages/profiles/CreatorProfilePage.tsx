@@ -9,7 +9,7 @@ import {
   readCreator,
   type County,
   type Creator,
-} from "../directory/api";
+} from "../../api/directory";
 import {
   AppNotice,
   CountyList,

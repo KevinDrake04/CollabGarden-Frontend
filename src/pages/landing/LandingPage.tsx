@@ -8,7 +8,7 @@ import {
   profilePath,
   readDirectory,
   type DirectoryEntry,
-} from "../directory/api";
+} from "../../api/directory";
 
 const counties = ["Essex", "Hudson", "Bergen", "Union"];
 

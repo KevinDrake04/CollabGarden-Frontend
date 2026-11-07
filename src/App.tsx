@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Navigate,
   NavLink,
@@ -32,26 +32,45 @@ import CreatorDashboard from "./pages/dashboard/CreatorDashboard";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import AdminPrototypePage from "./pages/admin/AdminPrototypePage";
 
-const publicNavLinks = [
-  { label: "Home", to: "/" },
-  { label: "Discover", to: "/discover" },
-  { label: "Campaigns", to: "/campaigns" },
-];
+function publicNavLinks(session: Session | null) {
+  const links = [
+    { label: "Home", to: "/" },
+    { label: "Discover", to: "/discover" },
+    { label: "Campaigns", to: "/campaigns" },
+  ];
+  if (session?.role === "business") {
+    links.push({ label: "Dashboard", to: "/dashboard/business" });
+  }
+  if (session?.role === "creator") {
+    links.push({ label: "Dashboard", to: "/dashboard/creator" });
+  }
+  return links;
+}
 
-// Public website. No development sidebar.
-function PublicLayout() {
+// Shared public header. The dashboard shell adds a page width around the outlet.
+function SiteFrame({
+  className,
+  mainClassName,
+  children,
+}: {
+  className?: string;
+  mainClassName?: string;
+  children: ReactNode;
+}) {
   const { pathname } = useLocation();
-  const landing = pathname === "/";
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [session, setSession] = useState<Session | null>(() => readSession());
 
-  useEffect(() => watchSession(() => setSession(readSession())), []);
+  useEffect(() => {
+    setSession(readSession());
+    return watchSession(() => setSession(readSession()));
+  }, [pathname]);
 
   return (
-    <div className={landing ? "min-h-screen bg-[#f8f8f0]" : undefined}>
+    <div className={className}>
       <header className="site-header">
         <PublicNavbar
-          links={publicNavLinks}
+          links={publicNavLinks(session)}
           account={session ? { label: "Log out", to: "/logout" } : { label: "Login", to: "/login" }}
           action={{
             label: "Sign up",
@@ -62,9 +81,7 @@ function PublicLayout() {
         />
       </header>
 
-      <main className={landing ? "landing-main" : undefined}>
-        <Outlet />
-      </main>
+      <main className={mainClassName}>{children}</main>
 
       <RoleSelectModal
         open={roleModalOpen}
@@ -74,37 +91,32 @@ function PublicLayout() {
   );
 }
 
-// User-facing dashboards. Not linked from the public navbar.
-function DashboardShell() {
-  const [roleModalOpen, setRoleModalOpen] = useState(false);
-  const [session, setSession] = useState<Session | null>(() => readSession());
-
-  useEffect(() => watchSession(() => setSession(readSession())), []);
+// Public website. No development sidebar.
+function PublicLayout() {
+  const { pathname } = useLocation();
+  const landing = pathname === "/";
 
   return (
-    <div className="min-h-screen bg-[var(--cg-background)]">
-      <header className="site-header">
-        <PublicNavbar
-          links={publicNavLinks}
-          account={session ? { label: "Log out", to: "/logout" } : { label: "Login", to: "/login" }}
-          action={{
-            label: "Sign up",
-            to: "/signup",
-            expanded: roleModalOpen,
-            onPress: () => setRoleModalOpen(true),
-          }}
-        />
-      </header>
-      <main className="landing-main">
-        <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8 md:py-10">
-          <Outlet />
-        </div>
-      </main>
-      <RoleSelectModal
-        open={roleModalOpen}
-        onClose={() => setRoleModalOpen(false)}
-      />
-    </div>
+    <SiteFrame
+      className={landing ? "min-h-screen bg-[#f8f8f0]" : undefined}
+      mainClassName={landing ? "landing-main" : undefined}
+    >
+      <Outlet />
+    </SiteFrame>
+  );
+}
+
+// User-facing dashboards. The Dashboard link appears only for a signed-in business or creator.
+function DashboardShell() {
+  return (
+    <SiteFrame
+      className="min-h-screen bg-[var(--cg-background)]"
+      mainClassName="landing-main"
+    >
+      <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8 md:py-10">
+        <Outlet />
+      </div>
+    </SiteFrame>
   );
 }
 

@@ -134,9 +134,11 @@ export default function BusinessDashboardPage() {
               </h3>
               <div className="flex flex-col items-start gap-4 sm:flex-row sm:flex-wrap">
                 <div className="flex flex-col gap-1">
-                  <AppButton isDisabled>Create campaign</AppButton>
+                  <Link to="/campaigns/new" className={linkClass}>
+                    Create campaign
+                  </Link>
                   <span className="text-xs text-[var(--cg-muted)]">
-                    Coming soon
+                    Opens the campaign form
                   </span>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -150,7 +152,7 @@ export default function BusinessDashboardPage() {
                 <div className="flex flex-col gap-1">
                   <AppButton isDisabled>View profile</AppButton>
                   <span className="text-xs text-[var(--cg-muted)]">
-                    Coming soon
+                    Needs this account's business id
                   </span>
                 </div>
               </div>
@@ -162,9 +164,14 @@ export default function BusinessDashboardPage() {
               My Campaigns
             </h3>
             <p className="text-sm">
-              Three example campaigns. Viewing and editing a campaign is coming
-              soon, so those buttons are disabled.
+              These cards are examples. The sample buttons stay unavailable.
             </p>
+            <Link
+              to="/campaigns"
+              className="text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
+            >
+              Browse open campaigns
+            </Link>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {sampleCampaigns.map((campaign) => (
                 <CampaignCard

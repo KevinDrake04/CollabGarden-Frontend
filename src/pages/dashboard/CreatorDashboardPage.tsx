@@ -161,9 +161,15 @@ export default function CreatorDashboardPage() {
               Available Opportunities
             </h3>
             <p className="text-sm">
-              Three example opportunities. Viewing details and applying are
-              coming soon, so those buttons are disabled.
+              These cards are examples. Applying from a sample card is not
+              available.
             </p>
+            <Link
+              to="/campaigns"
+              className="text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
+            >
+              Browse open campaigns
+            </Link>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {sampleOpportunities.map((opportunity) => (
                 <OpportunityCard

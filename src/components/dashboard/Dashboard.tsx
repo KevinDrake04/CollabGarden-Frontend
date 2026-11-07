@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { Card, Chip } from "@heroui/react";
 import { Sprout } from "lucide-react";
-import { AppButton } from "../ui/Primitives";
+import { AppButton } from "../ui/Buttons";
 
 // Presentational dashboard pieces. Pages pass in their own data.
 const cardClass = "rounded-2xl border border-[var(--cg-border)] bg-white p-5";

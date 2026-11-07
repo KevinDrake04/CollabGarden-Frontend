@@ -1,5 +1,5 @@
-import type { County } from "../directory/api";
-import type { BusinessName } from "./api";
+import type { County } from "../../api/directory";
+import type { BusinessName } from "../../api/admin";
 
 export function formatDate(value: string | null | undefined) {
   if (!value) return "No date";

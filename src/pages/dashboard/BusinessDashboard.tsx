@@ -145,8 +145,14 @@ export default function BusinessDashboard() {
           <section id="campaigns" className="scroll-mt-24">
             <SectionHeading
               title="My Campaigns"
-              text="Three example campaigns. Opening or editing a campaign is coming soon, so those buttons are disabled."
+              text="These cards are examples, not this account's campaigns. The sample buttons stay unavailable."
             />
+            <Link
+              to="/campaigns"
+              className="mb-4 inline-flex text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
+            >
+              Browse open campaigns
+            </Link>
             <div className="grid grid-cols-1 gap-4">
               {sampleCampaigns.map((campaign) => (
                 <CampaignCard key={campaign.title} {...campaign} actionDisabled />
@@ -194,8 +200,12 @@ export default function BusinessDashboard() {
             </h2>
             <div className="mt-4 flex flex-col items-start gap-4">
               <div className="flex flex-col gap-1">
-                <AppButton isDisabled>Create campaign</AppButton>
-                <span className="text-xs text-[var(--cg-muted)]">Coming soon</span>
+                <Link to="/campaigns/new" className={linkClass}>
+                  Create campaign
+                </Link>
+                <span className="text-xs text-[var(--cg-muted)]">
+                  Opens the campaign form
+                </span>
               </div>
               <div className="flex flex-col gap-1">
                 <Link to="/discover?type=creator" className={linkClass}>
