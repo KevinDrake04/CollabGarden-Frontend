@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Toast, toast } from "@heroui/react";
-import { Home, LayoutDashboard, MessageCircle, Search } from "lucide-react";
+import { ClipboardCheck, Home, LayoutDashboard, MessageCircle, Search } from "lucide-react";
 import {
+  AdminCampaignRow,
+  AdminEmptyState,
+  AdminStatCard,
+  AdminStatusBadge,
   AppAvatar,
   AppButton,
   AppInput,
@@ -15,10 +19,12 @@ import {
   DashboardSidebar,
   EmptyState,
   FilterChip,
+  FoundingMemberCard,
   LoadingSkeleton,
   MapPriceMarker,
   MessageBubble,
   MobileBottomNav,
+  PendingAccountCard,
   PublicNavbar,
   ReviewCard,
 } from "../components";
@@ -230,6 +236,67 @@ export default function ComponentGallery() {
             <MapPriceMarker price="$150" />
             <MapPriceMarker price="$225" active />
           </div>
+        </div>
+      </section>
+
+      {/* 6. Administration */}
+      <section className={sectionClass}>
+        <h2 className={headingClass}>Administration</h2>
+        <p className="mb-4 text-sm text-[var(--cg-muted)]">
+          Sample records for the admin components. Nothing here is sent to the API.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <AdminStatCard
+            label="Pending approvals"
+            value={2}
+            detail="Sample count"
+            icon={<ClipboardCheck size={18} aria-hidden="true" />}
+          />
+          <AdminStatCard label="Open campaigns" value={1} detail="Sample count" />
+        </div>
+        <div className={`${rowClass} mt-4`}>
+          <AdminStatusBadge status="pending" />
+          <AdminStatusBadge status="approved" />
+          <AdminStatusBadge status="suspended" />
+          <AdminStatusBadge status="waiting" />
+          <AdminStatusBadge status="invited" />
+          <AdminStatusBadge status="open" />
+          <AdminStatusBadge status="closed" />
+        </div>
+        <div className="mt-4 grid gap-4">
+          <PendingAccountCard
+            name="Sample Cafe"
+            detail="Business · Account 9001"
+            status="pending"
+            actions={
+              <AppButton onPress={() => setNotice("Sample only. Nothing was sent.")}>
+                Approve
+              </AppButton>
+            }
+          />
+          <FoundingMemberCard
+            name="Sample Priya Shah"
+            details={["Creator · Essex · priya@example.com"]}
+            status="waiting"
+            note="Sample review note"
+          />
+          <AdminCampaignRow
+            name="Sample Spring Tasting"
+            detail="Sample Cafe · Paid · May 1, 2026 - May 31, 2026 · Essex"
+            status="open"
+            action={
+              <AppButton variant="secondary" isDisabled aria-describedby="gallery-campaign-note">
+                Change status
+              </AppButton>
+            }
+          />
+          <p id="gallery-campaign-note" className="text-sm text-[var(--cg-muted)]">
+            The administrator API can list campaigns. Status changes are unavailable on that API.
+          </p>
+          <AdminEmptyState
+            title="No sample records"
+            description="Empty state for an administrator list."
+          />
         </div>
       </section>
 

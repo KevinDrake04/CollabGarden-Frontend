@@ -15,6 +15,8 @@ import "./styles/collabgarden-ui.css";
 import DirectoryPage from "./pages/directory/DirectoryPage";
 import LoginPage from "./pages/auth/LoginPage";
 import LandingPage from "./pages/landing/LandingPage";
+import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
+import AdminPrototypePage from "./pages/admin/AdminPrototypePage";
 
 const publicNavLinks = [
   { label: "Home", to: "/" },
@@ -55,6 +57,8 @@ const devSections = [
       ["Home", "/dev"],
       ["Components", "/dev/components"],
       ["Dashboard", "/dev/app/dashboard"],
+      ["Admin prototype", "/dev/dashboard/admin"],
+      ["Admin dashboard", "/dashboard/admin"],
       ["Campaigns", "/dev/app/campaigns"],
       ["Campaign workspace", "/dev/app/campaigns/demo"],
       ["Opportunities", "/dev/app/opportunities"],
@@ -162,6 +166,9 @@ function LegacyAppRedirect() {
 export default function App() {
   return (
     <Routes>
+      <Route path="dashboard/admin" element={<AdminDashboardPage />} />
+      <Route path="dashboard/admin/:section" element={<AdminDashboardPage />} />
+
       {/* Public website */}
       <Route element={<PublicLayout />}>
         <Route index element={<LandingPage />} />
@@ -193,6 +200,8 @@ export default function App() {
         />
 
         <Route path="components" element={<ComponentGallery />} />
+
+        <Route path="dashboard/admin" element={<AdminPrototypePage />} />
 
         <Route
           path="app/dashboard"

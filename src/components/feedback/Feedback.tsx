@@ -169,6 +169,9 @@ interface ConfirmDialogProps {
   title: string;
   description: string;
   confirmLabel?: string;
+  confirmVariant?: "primary" | "secondary" | "ghost" | "destructive";
+  confirmDisabled?: boolean;
+  children?: ReactNode;
   onConfirm: () => void;
   onClose: () => void;
 }
@@ -178,6 +181,9 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = "Confirm",
+  confirmVariant = "primary",
+  confirmDisabled = false,
+  children,
   onConfirm,
   onClose,
 }: ConfirmDialogProps) {
@@ -199,12 +205,19 @@ export function ConfirmDialog({
             </Modal.Header>
             <Modal.Body>
               <p>{description}</p>
+              {children}
             </Modal.Body>
             <Modal.Footer>
-              <AppButton variant="secondary" onPress={onClose}>
+              <AppButton variant="secondary" isDisabled={confirmDisabled} onPress={onClose}>
                 Cancel
               </AppButton>
-              <AppButton onPress={onConfirm}>{confirmLabel}</AppButton>
+              <AppButton
+                variant={confirmVariant}
+                isDisabled={confirmDisabled}
+                onPress={onConfirm}
+              >
+                {confirmLabel}
+              </AppButton>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
