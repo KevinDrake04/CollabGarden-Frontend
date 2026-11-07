@@ -1,17 +1,59 @@
-import { type FormEvent, useState } from "react";
-import { Link } from "react-router";
+import { type FormEvent, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { InputGroup, Label, TextField } from "@heroui/react";
 import { AppButton, AppInput, AppNotice } from "../../components";
+import { AuthError, clearSession, login, writeSession } from "./session";
+
+function nextPath(value: unknown, role: "business" | "creator") {
+  if (typeof value === "string" && value.startsWith("/") && !value.startsWith("//")) return value;
+  return role === "business" ? "/campaigns/new" : "/campaigns";
+}
+
+export function LogoutPage() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    clearSession();
+    navigate("/", { replace: true });
+  }, [navigate]);
+
+  return null;
+}
 
 export default function LoginPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("Login isn't connected yet.");
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setMessage("Enter your email and password.");
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage("");
+    try {
+      const session = await login(trimmedEmail, password);
+      writeSession(session);
+      setPassword("");
+      const requested = location.state && typeof location.state === "object" && "from" in location.state
+        ? location.state.from
+        : null;
+      navigate(nextPath(requested, session.role), { replace: true });
+    } catch (error) {
+      const fallback = "Login failed. Please try again.";
+      setMessage(error instanceof AuthError || error instanceof Error ? error.message || fallback : fallback);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   // Cancel the default page padding so this screen can use the landing page background.
@@ -41,13 +83,17 @@ export default function LoginPage() {
               name="email"
               type="email"
               placeholder="name@example.com"
+              value={email}
+              onChange={setEmail}
               required
+              disabled={submitting}
             />
 
             <TextField
               name="password"
               type={showPassword ? "text" : "password"}
               isRequired
+              isDisabled={submitting}
               className="flex w-full flex-col gap-1.5"
             >
               <Label className="text-sm font-medium text-[var(--cg-text)]">
@@ -83,15 +129,15 @@ export default function LoginPage() {
           {message && (
             <div className="mt-4">
               <AppNotice
-                tone="info"
+                tone="error"
                 message={message}
                 onClose={() => setMessage("")}
               />
             </div>
           )}
 
-          <AppButton type="submit" className="mt-6 w-full">
-            Log In
+          <AppButton type="submit" className="mt-6 w-full" isDisabled={submitting}>
+            {submitting ? "Logging in..." : "Log In"}
           </AppButton>
 
           <p className="mt-4 text-center text-sm">

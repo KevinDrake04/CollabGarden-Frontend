@@ -41,7 +41,7 @@ function PublicLinks({
         <NavLink
           key={item.to}
           to={item.to}
-          end={item.to === "/"}
+          end
           onClick={onSelect}
           className={({ isActive }) =>
             `${linkClass} ${isActive ? currentClass : idleClass}`
