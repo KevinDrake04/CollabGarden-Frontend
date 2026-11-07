@@ -57,7 +57,9 @@ import {
   type DeliverableSummary,
 } from "../components";
 import CampaignForm, {
+  describeRequirements,
   emptyCampaignForm,
+  hasCampaignErrors,
   validateCampaignForm,
   type CampaignFormErrors,
   type CampaignFormValues,
@@ -185,10 +187,17 @@ export default function ComponentGallery() {
   const [approvedComment, setApprovedComment] = useState("");
   const [revisionComment, setRevisionComment] = useState("");
 
-  function previewCampaign(message: string) {
+  function previewCampaign(action: string) {
     const nextErrors = validateCampaignForm(campaign);
     setCampaignErrors(nextErrors);
-    setCampaignNote(Object.keys(nextErrors).length === 0 ? message : "");
+    if (hasCampaignErrors(nextErrors)) {
+      setCampaignNote("");
+      return;
+    }
+    const summary = describeRequirements(campaign.requirements);
+    setCampaignNote(
+      `Preview only. ${action} does not call the API. Requirements: ${summary}.`,
+    );
   }
 
   return (
@@ -642,8 +651,9 @@ export default function ComponentGallery() {
       <section className={sectionClass}>
         <h2 className={headingClass}>Campaign form</h2>
         <p className="mb-4 text-sm text-[var(--cg-muted)]">
-          Basic example with sample counties. These buttons only check the form.
-          They do not save or publish a campaign.
+          Basic example with sample counties. Save Draft and Publish check the
+          structured deliverable requirements and list them here. They do not
+          call the API.
         </p>
         {campaignNote && (
           <div className="mb-4">
@@ -660,12 +670,8 @@ export default function ComponentGallery() {
             setCampaignErrors({});
             setCampaignNote("");
           }}
-          onSaveDraft={() =>
-            previewCampaign("Preview only. Save Draft does not call the API from this page.")
-          }
-          onPublish={() =>
-            previewCampaign("Preview only. Publish does not call the API from this page.")
-          }
+          onSaveDraft={() => previewCampaign("Save Draft")}
+          onPublish={() => previewCampaign("Publish")}
         />
       </section>
 

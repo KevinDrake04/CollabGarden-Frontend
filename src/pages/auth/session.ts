@@ -1,18 +1,23 @@
-import type { AccountRole, Session } from "../../api/auth";
+import { AuthError, fetchAccount, roleOf, type AccountRole, type Session } from "../../api/auth";
 
 const storageKey = "collabgarden.session";
 const sessionEvent = "collabgarden-session";
 
 export type { AccountRole, Session };
 
-function roleOf(value: unknown): AccountRole | null {
-  return value === "business" || value === "creator" ? value : null;
-}
-
 function storedBusinessId(value: Partial<Session>) {
   return typeof value.businessId === "number" && Number.isInteger(value.businessId)
     ? value.businessId
     : null;
+}
+
+function storedBusinessIds(value: Partial<Session>) {
+  if (!Object.prototype.hasOwnProperty.call(value, "businessIds") || value.businessIds == null) {
+    return null;
+  }
+  if (!Array.isArray(value.businessIds)) return null;
+  if (!value.businessIds.every((id) => typeof id === "number" && Number.isInteger(id))) return null;
+  return value.businessIds;
 }
 
 function notify() {
@@ -32,6 +37,7 @@ export function readSession(): Session | null {
       email: parsed.email,
       role,
       businessId: storedBusinessId(parsed),
+      businessIds: storedBusinessIds(parsed),
     };
   } catch {
     return null;
@@ -51,4 +57,41 @@ export function clearSession() {
 export function watchSession(onChange: () => void) {
   window.addEventListener(sessionEvent, onChange);
   return () => window.removeEventListener(sessionEvent, onChange);
+}
+
+function sameSession(left: Session, right: Session) {
+  return left.accessToken === right.accessToken
+    && left.userId === right.userId
+    && left.email === right.email
+    && left.role === right.role
+    && left.businessId === right.businessId
+    && JSON.stringify(left.businessIds) === JSON.stringify(right.businessIds);
+}
+
+// Reload role and business membership from /auth/me into the same stored session.
+// An expired token clears that session. Other failures leave it in place.
+export async function refreshSession(signal?: AbortSignal): Promise<Session | null> {
+  const current = readSession();
+  if (!current) return null;
+
+  try {
+    const account = await fetchAccount(current.accessToken, signal);
+    const next: Session = {
+      accessToken: current.accessToken,
+      userId: account.id,
+      email: account.email || current.email,
+      role: account.role,
+      businessId: account.businessId,
+      businessIds: account.businessIds,
+    };
+    if (!sameSession(current, next)) writeSession(next);
+    return next;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (error instanceof AuthError && error.status === 401) {
+      clearSession();
+      return null;
+    }
+    throw error;
+  }
 }

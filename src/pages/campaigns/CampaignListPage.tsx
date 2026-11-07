@@ -4,7 +4,15 @@ import { Chip } from "@heroui/react";
 import { Calendar, MapPin } from "lucide-react";
 import { AppAvatar, AppButton, AppNotice, EmptyState, LoadingSkeleton } from "../../components";
 import { getCounties, type County } from "../../api/directory";
-import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign, type OfferType } from "../../api/campaigns";
+import {
+  getBusinesses,
+  listOpenCampaigns,
+  type BusinessSummary,
+  type Campaign,
+  type DeliverableRequirement,
+  type DeliverableType,
+  type OfferType,
+} from "../../api/campaigns";
 
 const offerLabels: Record<OfferType, string> = {
   gifted: "Gifted",
@@ -28,6 +36,24 @@ function dateLabel(campaign: Campaign) {
   return start || end || "Dates not listed";
 }
 
+const requirementLabels: Record<DeliverableType, [string, string]> = {
+  post: ["Post", "Posts"],
+  story: ["Story", "Stories"],
+  reel: ["Reel", "Reels"],
+};
+
+function requirementsLabel(requirements: DeliverableRequirement[] | undefined) {
+  if (!requirements || requirements.length === 0) return "";
+  const parts: string[] = [];
+  for (const requirement of requirements) {
+    const labels = requirementLabels[requirement.deliverable_type];
+    const quantity = requirement.quantity;
+    if (!labels || !Number.isInteger(quantity) || quantity < 1) continue;
+    parts.push(`${quantity} ${quantity === 1 ? labels[0] : labels[1]}`);
+  }
+  return parts.join(" · ");
+}
+
 function countyLabel(ids: number[], counties: County[]) {
   const names = ids.flatMap((id) => {
     const match = counties.find((county) => county.county_id === id);
@@ -48,6 +74,7 @@ function CampaignCard({
   counties: County[];
 }) {
   const businessName = business?.name || `Business ${campaign.business_id}`;
+  const requirements = requirementsLabel(campaign.deliverable_requirements);
 
   return (
     <article className="flex min-w-0 flex-col gap-4 rounded-2xl border border-[var(--cg-border)] bg-white p-5 shadow-sm">
@@ -74,6 +101,8 @@ function CampaignCard({
           {campaign.description}
         </div>
       )}
+
+      {requirements && <p className="text-sm">{requirements}</p>}
 
       <div className="mt-auto flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:gap-x-6">
         <span className="inline-flex min-w-0 items-start gap-1.5">

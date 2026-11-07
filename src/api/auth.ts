@@ -1,8 +1,10 @@
 /// <reference types="vite/client" />
 
-// Login: POST /auth/login returns access_token, refresh_token, token_type "bearer",
-// and user { id, email, role } where role is "business" or "creator".
-// GET /auth/me returns { id, email }. Neither response includes business_id.
+// Login: POST /auth/login returns access_token and user { id, email, role }.
+// The OpenAPI document leaves that response schema untyped.
+// GET /auth/me is also untyped in OpenAPI and now returns the signed-in account:
+// id, email, role, business_id, and business_ids.
+// Creators receive null business identifiers. role is "business" or "creator".
 // The browser copy of this session lives in src/pages/auth/session.ts.
 
 export type AccountRole = "business" | "creator";
@@ -13,6 +15,7 @@ export type Session = {
   email: string;
   role: AccountRole;
   businessId: number | null;
+  businessIds: number[] | null;
 };
 
 export class AuthError extends Error {
@@ -56,14 +59,95 @@ async function readBody(response: Response) {
   }
 }
 
-function roleOf(value: unknown): AccountRole | null {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+export function roleOf(value: unknown): AccountRole | null {
   return value === "business" || value === "creator" ? value : null;
 }
 
-function businessIdOf(value: unknown) {
-  if (!value || typeof value !== "object" || !("business_id" in value)) return null;
-  const businessId = value.business_id;
-  return typeof businessId === "number" && Number.isInteger(businessId) ? businessId : null;
+function integerId(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
+function accountRecord(body: unknown) {
+  if (!isRecord(body)) return null;
+  if ("role" in body || "business_id" in body || "business_ids" in body || "id" in body) return body;
+  return isRecord(body.user) ? body.user : body;
+}
+
+export type AccountProfile = {
+  id: string;
+  email: string;
+  role: AccountRole;
+  businessId: number | null;
+  businessIds: number[] | null;
+};
+
+export function parseAccount(body: unknown): AccountProfile {
+  const account = accountRecord(body);
+  if (!account) {
+    throw new AuthError(200, "The account response did not include this user.");
+  }
+
+  const id = typeof account.id === "string" ? account.id : "";
+  const email = typeof account.email === "string" ? account.email : "";
+  const role = roleOf(account.role);
+  if (!id || !role) {
+    throw new AuthError(200, "The account response did not include an id and role.");
+  }
+
+  if ("business_id" in account && account.business_id != null && integerId(account.business_id) == null) {
+    throw new AuthError(200, "The account response included an invalid business id.");
+  }
+  const businessId = integerId(account.business_id);
+
+  let businessIds: number[] | null = null;
+  if ("business_ids" in account && account.business_ids != null) {
+    if (!Array.isArray(account.business_ids)) {
+      throw new AuthError(200, "The account response included an invalid business list.");
+    }
+    businessIds = account.business_ids.map((item) => {
+      const idValue = integerId(item);
+      if (idValue == null) {
+        throw new AuthError(200, "The account response included an invalid business id.");
+      }
+      return idValue;
+    });
+  }
+
+  return { id, email, role, businessId, businessIds };
+}
+
+// Ids the account is allowed to use. Nothing is added that /auth/me did not return.
+export function verifiedBusinessIds(account: {
+  businessId: number | null;
+  businessIds: number[] | null;
+}) {
+  const ids: number[] = [];
+  const seen = new Set<number>();
+  const add = (id: number | null) => {
+    if (id == null || seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  };
+
+  if (account.businessIds) {
+    for (const id of account.businessIds) add(id);
+  }
+  add(account.businessId);
+  return ids;
+}
+
+export async function fetchAccount(token: string, signal?: AbortSignal) {
+  const response = await fetch(`${apiUrl()}/auth/me`, {
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+    signal,
+  });
+  const body = await readBody(response);
+  if (!response.ok) throw new AuthError(response.status, errorMessage(response.status, body));
+  return parseAccount(body);
 }
 
 export async function login(email: string, password: string): Promise<Session> {
@@ -75,43 +159,26 @@ export async function login(email: string, password: string): Promise<Session> {
   const body = await readBody(response);
   if (!response.ok) throw new AuthError(response.status, errorMessage(response.status, body));
 
-  const record = body && typeof body === "object" ? body : null;
-  const token = record && "access_token" in record && typeof record.access_token === "string"
-    ? record.access_token
-    : "";
-  const user = record && "user" in record && record.user && typeof record.user === "object"
-    ? record.user
-    : null;
-  const role = user && "role" in user ? roleOf(user.role) : null;
-  const userId = user && "id" in user && typeof user.id === "string" ? user.id : "";
-  const userEmail = user && "email" in user && typeof user.email === "string" ? user.email : email;
-  if (!token || !user || !role || !userId) {
-    throw new AuthError(response.status, "The login response did not include an access token and account role.");
+  const record = isRecord(body) ? body : null;
+  const token = record && typeof record.access_token === "string" ? record.access_token : "";
+  const user = record && isRecord(record.user) ? record.user : null;
+  const userId = user && typeof user.id === "string" ? user.id : "";
+  const userEmail = user && typeof user.email === "string" ? user.email : email;
+  if (!token || !user || !userId) {
+    throw new AuthError(response.status, "The login response did not include an access token and account.");
   }
 
-  const accountResponse = await fetch(`${apiUrl()}/auth/me`, {
-    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-  });
-  const account = await readBody(accountResponse);
-  if (!accountResponse.ok) {
-    throw new AuthError(accountResponse.status, errorMessage(accountResponse.status, account));
+  const account = await fetchAccount(token);
+  if (account.id !== userId) {
+    throw new AuthError(200, "The account response did not match the signed-in user.");
   }
-  const accountId = account && typeof account === "object" && "id" in account && typeof account.id === "string"
-    ? account.id
-    : "";
-  if (accountId !== userId) {
-    throw new AuthError(accountResponse.status, "The account response did not match the signed-in user.");
-  }
-
-  const accountEmail = account && typeof account === "object" && "email" in account && typeof account.email === "string"
-    ? account.email
-    : userEmail;
 
   return {
     accessToken: token,
-    userId,
-    email: accountEmail,
-    role,
-    businessId: businessIdOf(user) ?? businessIdOf(account),
+    userId: account.id,
+    email: account.email || userEmail,
+    role: account.role,
+    businessId: account.businessId,
+    businessIds: account.businessIds,
   };
 }

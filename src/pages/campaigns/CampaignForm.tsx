@@ -2,17 +2,107 @@ import { type ReactNode, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { AppButton, AppInput, AppSelect, AppTextarea } from "../../components";
 
+export const deliverableTypeOptions = [
+  { value: "post", label: "Post" },
+  { value: "story", label: "Story" },
+  { value: "reel", label: "Reel" },
+] as const;
+
+export type DeliverableType = (typeof deliverableTypeOptions)[number]["value"];
+
+const deliverableTypeValues = new Set<string>(deliverableTypeOptions.map((option) => option.value));
+
+export type DeliverableRequirementDraft = {
+  key: string;
+  deliverableType: string;
+  quantity: string;
+};
+
 export type CampaignFormValues = {
   name: string;
   description: string;
-  deliverables: string;
+  requirements: DeliverableRequirementDraft[];
   startsOn: string;
   endsOn: string;
   countyIds: number[];
   offerType: string;
 };
 
-export type CampaignFormErrors = Partial<Record<keyof CampaignFormValues, string>>;
+export type RequirementRowErrors = {
+  deliverableType?: string;
+  quantity?: string;
+};
+
+export type CampaignFormErrors = {
+  name?: string;
+  description?: string;
+  startsOn?: string;
+  endsOn?: string;
+  countyIds?: string;
+  offerType?: string;
+  requirements?: string;
+  requirementRows?: Record<string, RequirementRowErrors>;
+};
+
+let nextRequirementKey = 1;
+
+export function blankRequirement(): DeliverableRequirementDraft {
+  const key = `requirement-${nextRequirementKey}`;
+  nextRequirementKey += 1;
+  return { key, deliverableType: "", quantity: "" };
+}
+
+export function isDeliverableType(value: string): value is DeliverableType {
+  return deliverableTypeValues.has(value);
+}
+
+export function parseQuantity(value: string) {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const quantity = Number(trimmed);
+  if (!Number.isSafeInteger(quantity) || quantity < 1) return null;
+  return quantity;
+}
+
+export function toDeliverableRequirements(requirements: DeliverableRequirementDraft[]) {
+  if (requirements.length === 0) return null;
+  const parsed: { deliverable_type: DeliverableType; quantity: number }[] = [];
+  for (const requirement of requirements) {
+    if (!isDeliverableType(requirement.deliverableType)) return null;
+    const quantity = parseQuantity(requirement.quantity);
+    if (quantity == null) return null;
+    parsed.push({ deliverable_type: requirement.deliverableType, quantity });
+  }
+  return parsed;
+}
+
+export function describeRequirements(requirements: DeliverableRequirementDraft[]) {
+  return requirements
+    .map((requirement) => {
+      const label = deliverableTypeOptions.find((option) => option.value === requirement.deliverableType)?.label
+        ?? requirement.deliverableType;
+      const quantity = requirement.quantity.trim();
+      if (!label || !quantity) return "";
+      return `${quantity} ${label.toLowerCase()}${quantity === "1" ? "" : "s"}`;
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+export function hasCampaignErrors(errors: CampaignFormErrors) {
+  if (
+    errors.name
+    || errors.description
+    || errors.offerType
+    || errors.startsOn
+    || errors.endsOn
+    || errors.countyIds
+    || errors.requirements
+  ) {
+    return true;
+  }
+  return Object.values(errors.requirementRows ?? {}).some((row) => row.deliverableType || row.quantity);
+}
 
 export type CampaignCounty = {
   county_id: number;
@@ -31,7 +121,7 @@ export function emptyCampaignForm(): CampaignFormValues {
   return {
     name: "",
     description: "",
-    deliverables: "",
+    requirements: [blankRequirement()],
     startsOn: "",
     endsOn: "",
     countyIds: [],
@@ -44,7 +134,23 @@ export function validateCampaignForm(values: CampaignFormValues): CampaignFormEr
 
   if (!values.name.trim()) errors.name = "Enter a campaign title.";
   if (!values.description.trim()) errors.description = "Enter a description.";
-  if (!values.deliverables.trim()) errors.deliverables = "Enter the deliverables.";
+  if (values.requirements.length === 0) {
+    errors.requirements = "Add at least one deliverable requirement.";
+  } else {
+    const requirementRows: Record<string, RequirementRowErrors> = {};
+    for (const requirement of values.requirements) {
+      const row: RequirementRowErrors = {};
+      if (!requirement.deliverableType) row.deliverableType = "Select Post, Story, or Reel.";
+      else if (!isDeliverableType(requirement.deliverableType)) {
+        row.deliverableType = "Select Post, Story, or Reel.";
+      }
+      if (parseQuantity(requirement.quantity) == null) {
+        row.quantity = "Enter a positive whole number.";
+      }
+      if (row.deliverableType || row.quantity) requirementRows[requirement.key] = row;
+    }
+    if (Object.keys(requirementRows).length > 0) errors.requirementRows = requirementRows;
+  }
   if (!values.offerType) errors.offerType = "Select an offer type.";
   else if (!offerValues.has(values.offerType)) errors.offerType = "Select gifted, dining, or paid.";
   if (!values.startsOn) errors.startsOn = "Enter a start date.";
@@ -66,6 +172,7 @@ type CampaignFormProps = {
   onSaveDraft: () => void;
   onPublish: () => void;
   actionsDisabled?: boolean;
+  requirementsLocked?: boolean;
   variant?: "plain" | "page";
   banner?: ReactNode;
 };
@@ -163,14 +270,105 @@ function CountyField({
   );
 }
 
-function DetailFields({
+function RequirementFields({
   values,
   errors,
-  onChange,
+  locked,
+  onEdit,
+  onRemove,
+  onAdd,
 }: {
   values: CampaignFormValues;
   errors: CampaignFormErrors;
+  locked: boolean;
+  onEdit: (key: string, patch: Partial<DeliverableRequirementDraft>) => void;
+  onRemove: (key: string) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <fieldset className="min-w-0 space-y-3">
+      <legend className="text-sm font-medium text-[var(--cg-text)]">Deliverable requirements</legend>
+      <p className="text-sm">
+        {locked
+          ? "Deliverable requirements cannot be changed after the campaign is published."
+          : "Add each post, story, or reel and how many you need."}
+      </p>
+
+      {values.requirements.map((requirement, index) => {
+        const rowErrors = errors.requirementRows?.[requirement.key];
+        const position = index + 1;
+        return (
+          <div
+            key={requirement.key}
+            className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_9rem_auto] md:items-end"
+          >
+            <AppSelect
+              label={`Type ${position}`}
+              name={`deliverable-type-${requirement.key}`}
+              value={requirement.deliverableType}
+              onChange={(deliverableType) => onEdit(requirement.key, { deliverableType })}
+              options={[...deliverableTypeOptions]}
+              placeholder="Select a type"
+              error={rowErrors?.deliverableType}
+              disabled={locked}
+              required
+            />
+            <AppInput
+              label={`Quantity ${position}`}
+              name={`deliverable-quantity-${requirement.key}`}
+              type="number"
+              value={requirement.quantity}
+              onChange={(quantity) => onEdit(requirement.key, { quantity })}
+              placeholder="1"
+              error={rowErrors?.quantity}
+              disabled={locked}
+              required
+            />
+            <AppButton
+              type="button"
+              variant="secondary"
+              className="w-full md:mb-0.5 md:w-auto"
+              isDisabled={locked}
+              onPress={() => onRemove(requirement.key)}
+              aria-label={`Remove requirement ${position}`}
+            >
+              Remove
+            </AppButton>
+          </div>
+        );
+      })}
+
+      {errors.requirements && <div className={errorClass}>{errors.requirements}</div>}
+
+      <AppButton
+        type="button"
+        variant="secondary"
+        className="w-full sm:w-auto"
+        isDisabled={locked}
+        onPress={onAdd}
+      >
+        Add requirement
+      </AppButton>
+    </fieldset>
+  );
+}
+
+function DetailFields({
+  values,
+  errors,
+  locked,
+  onChange,
+  onEditRequirement,
+  onRemoveRequirement,
+  onAddRequirement,
+}: {
+  values: CampaignFormValues;
+  errors: CampaignFormErrors;
+  locked: boolean;
   onChange: (patch: Partial<CampaignFormValues>) => void;
+  onEditRequirement: (key: string, patch: Partial<DeliverableRequirementDraft>) => void;
+  onRemoveRequirement: (key: string) => void;
+  onAddRequirement: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -208,16 +406,13 @@ function DetailFields({
         rows={4}
       />
 
-      <AppTextarea
-        label="Deliverables"
-        name="deliverables"
-        value={values.deliverables}
-        onChange={(deliverables) => onChange({ deliverables })}
-        placeholder="One Instagram post and two stories."
-        helper="Required on this form. The campaign API cannot store deliverables separately, so this text is not saved."
-        error={errors.deliverables}
-        required
-        rows={3}
+      <RequirementFields
+        values={values}
+        errors={errors}
+        locked={locked}
+        onEdit={onEditRequirement}
+        onRemove={onRemoveRequirement}
+        onAdd={onAddRequirement}
       />
     </div>
   );
@@ -310,6 +505,7 @@ export default function CampaignForm({
   onSaveDraft,
   onPublish,
   actionsDisabled = false,
+  requirementsLocked = false,
   variant = "plain",
   banner,
 }: CampaignFormProps) {
@@ -322,7 +518,38 @@ export default function CampaignForm({
     onChange(next);
   }
 
-  const details = <DetailFields values={values} errors={errors} onChange={update} />;
+  function editRequirement(key: string, patch: Partial<DeliverableRequirementDraft>) {
+    if (requirementsLocked) return;
+    update({
+      requirements: latest.current.requirements.map((item) => (
+        item.key === key ? { ...item, ...patch } : item
+      )),
+    });
+  }
+
+  function removeRequirement(key: string) {
+    if (requirementsLocked) return;
+    update({
+      requirements: latest.current.requirements.filter((item) => item.key !== key),
+    });
+  }
+
+  function addRequirement() {
+    if (requirementsLocked) return;
+    update({ requirements: [...latest.current.requirements, blankRequirement()] });
+  }
+
+  const details = (
+    <DetailFields
+      values={values}
+      errors={errors}
+      locked={requirementsLocked}
+      onChange={update}
+      onEditRequirement={editRequirement}
+      onRemoveRequirement={removeRequirement}
+      onAddRequirement={addRequirement}
+    />
+  );
   const schedule = <ScheduleFields values={values} errors={errors} onChange={update} />;
   const countiesField = (
     <CountyField

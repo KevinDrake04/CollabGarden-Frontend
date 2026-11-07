@@ -21,7 +21,7 @@ import CreatorProfilePage from "./pages/profiles/CreatorProfilePage";
 import LoginPage, { LogoutPage } from "./pages/auth/LoginPage";
 import { RoleSelectModal } from "./pages/auth/RoleSelectModal";
 import SignupPage from "./pages/auth/SignupPage";
-import { readSession, watchSession, type Session } from "./pages/auth/session";
+import { readSession, refreshSession, watchSession, type Session } from "./pages/auth/session";
 import LandingPage from "./pages/landing/LandingPage";
 import CampaignListPage from "./pages/campaigns/CampaignListPage";
 import NewCampaignPage from "./pages/campaigns/NewCampaignPage";
@@ -65,6 +65,14 @@ function SiteFrame({
     setSession(readSession());
     return watchSession(() => setSession(readSession()));
   }, [pathname]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    refreshSession(controller.signal).catch(() => {
+      // A 401 clears the stored session. Other failures leave it in place.
+    });
+    return () => controller.abort();
+  }, []);
 
   return (
     <div className={className}>

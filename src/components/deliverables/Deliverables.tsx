@@ -272,17 +272,33 @@ const attachmentTypeOptions: SelectOption[] = [
 type FormErrors = {
   campaignId?: string;
   title?: string;
-  attachments?: string;
+  attachmentRows?: Record<string, string>;
 };
+
+function attachmentUrlError(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "Enter a URL.";
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return "Enter an http or https URL.";
+    }
+  } catch {
+    return "Enter an http or https URL.";
+  }
+  return "";
+}
 
 function cleanInput(values: DeliverableFormValues): DeliverableInput {
   return {
     campaignId: values.campaignId,
     title: values.title.trim(),
     description: values.description.trim(),
-    attachments: values.attachments
-      .filter((attachment) => attachment.url.trim())
-      .map((attachment) => ({ type: attachment.type, url: attachment.url.trim() })),
+    attachments: values.attachments.flatMap((attachment) => {
+      const url = attachment.url.trim();
+      if (attachmentUrlError(url)) return [];
+      return [{ type: attachment.type, url }];
+    }),
   };
 }
 
@@ -293,11 +309,12 @@ function validate(values: DeliverableFormValues, campaigns?: SelectOption[]): Fo
   }
   if (!values.title.trim()) errors.title = "Enter a title.";
 
-  const blank = values.attachments.filter((attachment) => !attachment.url.trim());
-  const singleEmptyRow = values.attachments.length === 1 && blank.length === 1;
-  if (blank.length > 0 && !singleEmptyRow) {
-    errors.attachments = "Enter a URL for each attachment, or remove it.";
+  const attachmentRows: Record<string, string> = {};
+  for (const attachment of values.attachments) {
+    const message = attachmentUrlError(attachment.url);
+    if (message) attachmentRows[attachment.key] = message;
   }
+  if (Object.keys(attachmentRows).length > 0) errors.attachmentRows = attachmentRows;
   return errors;
 }
 
@@ -422,7 +439,7 @@ export function DeliverableForm({
                 })
               }
               placeholder="https://example.com/post"
-              error={errors.attachments && !attachment.url.trim() ? "Enter a URL." : undefined}
+              error={errors.attachmentRows?.[attachment.key]}
             />
             <AppButton
               type="button"
@@ -438,8 +455,6 @@ export function DeliverableForm({
             </AppButton>
           </div>
         ))}
-
-        {errors.attachments && <p className="text-sm text-[var(--cg-error)]">{errors.attachments}</p>}
 
         <AppButton
           type="button"

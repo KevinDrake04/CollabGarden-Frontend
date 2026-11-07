@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { ArrowUpRight, MapPin } from "lucide-react";
 import {
   AppAvatar,
@@ -36,6 +36,25 @@ function readFilters(search: string): Filters {
     counties: [...new Set(params.getAll("county"))],
     query: params.get("q") ?? "",
   };
+}
+
+function sameFilters(left: Filters, right: Filters) {
+  return left.type === right.type
+    && left.query === right.query
+    && left.counties.join("\0") === right.counties.join("\0");
+}
+
+// Keep the existing parameter names. Business is the default tab, so its type
+// stays out of the URL. Other parameters, such as preview, are left in place.
+function writeFilterParams(filters: Filters, current: URLSearchParams) {
+  const params = new URLSearchParams(current);
+  params.delete("type");
+  params.delete("q");
+  params.delete("county");
+  if (filters.type === "creator") params.set("type", "creator");
+  if (filters.query) params.set("q", filters.query);
+  filters.counties.forEach((county) => params.append("county", county));
+  return params;
 }
 
 function locationLabel(county: string) {
@@ -79,15 +98,16 @@ function DirectoryCard({ entry }: { entry: DirectoryEntry }) {
 }
 
 export default function DirectoryPage() {
-  const location = useLocation();
-  const [filters, setFilters] = useState<Filters>(() => readFilters(location.search));
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchKey = searchParams.toString();
+  const filters = useMemo(() => readFilters(searchKey), [searchKey]);
   const [counties, setCounties] = useState<County[]>(() => readCounties()?.value ?? []);
   const [entries, setEntries] = useState<DirectoryEntry[]>(() => {
-    const initial = readFilters(location.search);
+    const initial = readFilters(searchKey);
     return readDirectory(initial.type, initial.counties, initial.query)?.entries ?? [];
   });
   const [status, setStatus] = useState<"loading" | "ready" | "error">(() => {
-    const initial = readFilters(location.search);
+    const initial = readFilters(searchKey);
     return readDirectory(initial.type, initial.counties, initial.query) ? "ready" : "loading";
   });
   const [notice, setNotice] = useState("");
@@ -95,6 +115,8 @@ export default function DirectoryPage() {
   const [retry, setRetry] = useState(0);
   const filtersRef = useRef(filters);
   const handledRetry = useRef(retry);
+  const wroteFilters = useRef(false);
+  const replacingSearch = useRef(false);
   filtersRef.current = filters;
 
   const viewKey = directoryCacheKey(filters.type, filters.counties, filters.query);
@@ -117,9 +139,13 @@ export default function DirectoryPage() {
   }
 
   useEffect(() => {
-    setFilters(readFilters(location.search));
+    if (wroteFilters.current) {
+      wroteFilters.current = false;
+      return;
+    }
+    replacingSearch.current = false;
     setNotice("");
-  }, [location.search]);
+  }, [searchKey]);
 
   // The county dropdown can fill from memory. A slow county request must not
   // hide directory cards that are already saved.
@@ -186,17 +212,21 @@ export default function DirectoryPage() {
     };
   }, [filters.type, filters.counties, filters.query, retry]);
 
-  function updateFilters(changes: Partial<Filters>) {
-    setFilters((current) => ({ ...current, ...changes }));
+  function updateFilters(changes: Partial<Filters>, kind: "search" | "commit" = "commit") {
+    const nextFilters = { ...filters, ...changes };
+    if (sameFilters(filters, nextFilters)) return;
     setNotice("");
+    const replace = kind === "search" && replacingSearch.current;
+    wroteFilters.current = true;
+    replacingSearch.current = kind === "search";
+    setSearchParams(writeFilterParams(nextFilters, searchParams), { replace });
   }
 
   async function copyFilterLink() {
-    const params = new URLSearchParams();
-    if (filters.type === "creator") params.set("type", "creator");
-    if (filters.query.trim()) params.set("q", filters.query.trim());
-    filters.counties.forEach((county) => params.append("county", county));
-
+    const params = writeFilterParams(
+      { ...filters, query: filters.query.trim() },
+      new URLSearchParams(),
+    );
     const url = new URL(window.location.pathname, window.location.origin);
     url.search = params.toString();
 
@@ -211,7 +241,7 @@ export default function DirectoryPage() {
   const hasFilters = Boolean(filters.query.trim() || filters.counties.length);
 
   // Preserve the preview states used for Jira 7.1 testing.
-  const preview = new URLSearchParams(location.search).get("preview");
+  const preview = searchParams.get("preview");
   const loading = preview === "loading" || (!preview && status === "loading");
   const error = preview === "error" || (!preview && status === "error");
   const visibleResults = preview === "empty" ? [] : entries;
@@ -258,7 +288,7 @@ export default function DirectoryPage() {
             label="Search directory"
             placeholder="Search name or category"
             value={filters.query}
-            onChange={(query) => updateFilters({ query })}
+            onChange={(query) => updateFilters({ query }, "search")}
           />
           <CountyFilter
             options={counties.map((county) => county.name)}
