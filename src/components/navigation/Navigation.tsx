@@ -6,6 +6,7 @@ export interface NavItem {
   label: string;
   to: string;
   icon?: LucideIcon;
+  end?: boolean;
 }
 
 const linkClass =
@@ -181,14 +182,20 @@ export function PublicNavbar({ links, account, action }: PublicNavbarProps) {
 interface DashboardSidebarProps {
   links: NavItem[];
   title?: string;
+  expand?: boolean;
 }
 
 export function DashboardSidebar({
   links,
   title = "Workspace",
+  expand = false,
 }: DashboardSidebarProps) {
   return (
-    <div className="flex max-w-60 flex-col gap-1 rounded-xl border border-[var(--cg-border)] bg-white p-3">
+    <div
+      className={`flex flex-col gap-1 rounded-xl border border-[var(--cg-border)] bg-white p-3 ${
+        expand ? "w-full" : "max-w-60"
+      }`}
+    >
       <strong className="px-3 py-2 text-sm">{title}</strong>
       {links.map((item) => {
         const Icon = item.icon;
@@ -196,6 +203,7 @@ export function DashboardSidebar({
           <NavLink
             key={item.to}
             to={item.to}
+            end={item.end}
             className={({ isActive }) =>
               `${linkClass} ${isActive ? currentClass : idleClass}`
             }
@@ -222,6 +230,7 @@ export function MobileBottomNav({ links }: { links: NavItem[] }) {
           <NavLink
             key={item.to}
             to={item.to}
+            end={item.end}
             className={({ isActive }) =>
               `flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg px-1 py-2 text-center text-xs no-underline ${
                 isActive ? currentClass : idleClass

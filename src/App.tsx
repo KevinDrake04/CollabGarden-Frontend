@@ -29,6 +29,8 @@ import BusinessDashboardPage from "./pages/dashboard/BusinessDashboardPage";
 import CreatorDashboardPage from "./pages/dashboard/CreatorDashboardPage";
 import BusinessDashboard from "./pages/dashboard/BusinessDashboard";
 import CreatorDashboard from "./pages/dashboard/CreatorDashboard";
+import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
+import AdminPrototypePage from "./pages/admin/AdminPrototypePage";
 
 const publicNavLinks = [
   { label: "Home", to: "/" },
@@ -128,6 +130,8 @@ const devSections = [
       ["Creator dashboard", "/dev/dashboard/creator"],
       ["Business page", "/dashboard/business"],
       ["Creator page", "/dashboard/creator"],
+      ["Admin prototype", "/dev/dashboard/admin"],
+      ["Admin dashboard", "/dashboard/admin"],
       ["Campaigns", "/dev/app/campaigns"],
       ["Campaign workspace", "/dev/app/campaigns/demo"],
       ["Opportunities", "/dev/app/opportunities"],
@@ -223,6 +227,9 @@ function LegacyAppRedirect() {
 export default function App() {
   return (
     <Routes>
+      <Route path="dashboard/admin" element={<AdminDashboardPage />} />
+      <Route path="dashboard/admin/:section" element={<AdminDashboardPage />} />
+
       {/* Public website */}
       <Route element={<PublicLayout />}>
         <Route index element={<LandingPage />} />
@@ -273,6 +280,8 @@ export default function App() {
         <Route path="collaborations/creator" element={<CreatorDeliverablesPage />} />
 
         <Route path="collaborations/business" element={<BusinessReviewPage />} />
+
+        <Route path="dashboard/admin" element={<AdminPrototypePage />} />
 
         <Route
           path="app/dashboard"
