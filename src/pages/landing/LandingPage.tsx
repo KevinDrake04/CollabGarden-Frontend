@@ -10,8 +10,6 @@ import {
   type DirectoryEntry,
 } from "../../api/directory";
 
-const counties = ["Essex", "Hudson", "Bergen", "Union"];
-
 const sectionClass = "mx-auto max-w-6xl px-4 py-12 md:px-8 md:py-16";
 const headingClass = "text-2xl font-bold text-[var(--cg-primary-dark)] md:text-3xl";
 const actionClass =
@@ -27,6 +25,7 @@ const steps = [
     icon: MapPin,
     title: "Choose a county",
     body: "Narrow the list to the counties you want to work in.",
+    link: { label: "Explore all 21 NJ counties", to: "/discover" },
   },
   {
     icon: Users,
@@ -193,31 +192,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className={sectionClass} aria-labelledby="counties-heading">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <h2 id="counties-heading" className={headingClass}>
-            Explore by County
-          </h2>
-          <Link
-            to="/discover"
-            className="text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
-          >
-            View all
-          </Link>
-        </div>
-        <div className="mt-5 flex flex-wrap gap-2">
-          {counties.map((county) => (
-            <Link
-              key={county}
-              to={`/discover?type=creator&county=${encodeURIComponent(county)}`}
-              className="rounded-full border border-[var(--cg-border)] bg-white px-4 py-2 text-sm font-medium text-[var(--cg-text)] no-underline hover:border-[var(--cg-primary)]"
-            >
-              {county}
-            </Link>
-          ))}
-        </div>
-      </section>
-
       <section className={sectionClass} aria-labelledby="creators-heading">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -290,6 +264,14 @@ export default function LandingPage() {
                   </div>
                   <h3 className="font-semibold text-[var(--cg-primary-dark)]">{step.title}</h3>
                   <p className="mt-1 text-sm text-[var(--cg-muted)]">{step.body}</p>
+                  {"link" in step && step.link && (
+                    <Link
+                      to={step.link.to}
+                      className="mt-2 inline-block text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
+                    >
+                      {step.link.label}
+                    </Link>
+                  )}
                 </div>
               );
             })}
