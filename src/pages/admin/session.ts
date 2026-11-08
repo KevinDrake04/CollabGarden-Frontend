@@ -1,9 +1,7 @@
-// This branch does not sign administrators in.
-// The login work stores a session at sessionStorage "collabgarden.session"
-// with accessToken, email, and role ("business" or "creator"). When that
-// session exists, administrator requests send Authorization: Bearer.
-// Business and creator roles cannot send administrator changes. Any other
-// token is treated as an administrator only after the admin list endpoints accept it.
+// Login stores every recognized role at sessionStorage "collabgarden.session".
+// Administrator requests send Authorization: Bearer when that session exists.
+// Business and creator roles cannot load or change administrator records.
+// Any other role is treated as an administrator only after the admin list endpoints accept it.
 
 const storageKey = "collabgarden.session";
 const sessionEvent = "collabgarden-session";

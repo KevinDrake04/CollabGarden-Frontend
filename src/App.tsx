@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   Navigate,
   NavLink,
@@ -10,7 +10,6 @@ import {
 } from "react-router";
 import { Button } from "@heroui/react";
 import { Sprout } from "lucide-react";
-import { PublicNavbar } from "./components";
 import ComponentGallery from "./pages/ComponentGallery";
 import CreatorDeliverablesPage from "./pages/collaborations/CreatorDeliverablesPage";
 import BusinessReviewPage from "./pages/collaborations/BusinessReviewPage";
@@ -19,9 +18,8 @@ import DirectoryPage from "./pages/directory/DirectoryPage";
 import BusinessProfilePage from "./pages/profiles/BusinessProfilePage";
 import CreatorProfilePage from "./pages/profiles/CreatorProfilePage";
 import LoginPage, { LogoutPage } from "./pages/auth/LoginPage";
-import { RoleSelectModal } from "./pages/auth/RoleSelectModal";
+import { SiteHeader } from "./pages/auth/SiteHeader";
 import SignupPage from "./pages/auth/SignupPage";
-import { readSession, refreshSession, watchSession, type Session } from "./pages/auth/session";
 import LandingPage from "./pages/landing/LandingPage";
 import CampaignListPage from "./pages/campaigns/CampaignListPage";
 import NewCampaignPage from "./pages/campaigns/NewCampaignPage";
@@ -31,21 +29,6 @@ import BusinessDashboard from "./pages/dashboard/BusinessDashboard";
 import CreatorDashboard from "./pages/dashboard/CreatorDashboard";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import AdminPrototypePage from "./pages/admin/AdminPrototypePage";
-
-function publicNavLinks(session: Session | null) {
-  const links = [
-    { label: "Home", to: "/" },
-    { label: "Discover", to: "/discover" },
-    { label: "Campaigns", to: "/campaigns" },
-  ];
-  if (session?.role === "business") {
-    links.push({ label: "Dashboard", to: "/dashboard/business" });
-  }
-  if (session?.role === "creator") {
-    links.push({ label: "Dashboard", to: "/dashboard/creator" });
-  }
-  return links;
-}
 
 // Shared public header. The dashboard shell adds a page width around the outlet.
 function SiteFrame({
@@ -57,44 +40,10 @@ function SiteFrame({
   mainClassName?: string;
   children: ReactNode;
 }) {
-  const { pathname } = useLocation();
-  const [roleModalOpen, setRoleModalOpen] = useState(false);
-  const [session, setSession] = useState<Session | null>(() => readSession());
-
-  useEffect(() => {
-    setSession(readSession());
-    return watchSession(() => setSession(readSession()));
-  }, [pathname]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    refreshSession(controller.signal).catch(() => {
-      // A 401 clears the stored session. Other failures leave it in place.
-    });
-    return () => controller.abort();
-  }, []);
-
   return (
     <div className={className}>
-      <header className="site-header">
-        <PublicNavbar
-          links={publicNavLinks(session)}
-          account={session ? { label: "Log out", to: "/logout" } : { label: "Login", to: "/login" }}
-          action={{
-            label: "Sign up",
-            to: "/signup",
-            expanded: roleModalOpen,
-            onPress: () => setRoleModalOpen(true),
-          }}
-        />
-      </header>
-
+      <SiteHeader />
       <main className={mainClassName}>{children}</main>
-
-      <RoleSelectModal
-        open={roleModalOpen}
-        onClose={() => setRoleModalOpen(false)}
-      />
     </div>
   );
 }
@@ -114,7 +63,7 @@ function PublicLayout() {
   );
 }
 
-// User-facing dashboards. The Dashboard link appears only for a signed-in business or creator.
+// User-facing dashboards. The shared header adds Dashboard for the signed-in role.
 function DashboardShell() {
   return (
     <SiteFrame
@@ -273,7 +222,7 @@ export default function App() {
         <Route path="*" element={<Page title="404 — Page Not Found" />} />
       </Route>
 
-      {/* User-facing dashboards. Demo data only. */}
+      {/* User-facing dashboards. Development previews stay under /dev/dashboard. */}
       <Route element={<DashboardShell />}>
         <Route path="dashboard/business" element={<BusinessDashboard />} />
         <Route path="dashboard/creator" element={<CreatorDashboard />} />

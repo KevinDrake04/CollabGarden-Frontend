@@ -1,75 +1,32 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { CheckCircle, Handshake, Sparkles } from "lucide-react";
 import {
   AppAvatar,
   AppButton,
-  CampaignCard,
-  type DashboardCampaignStatus,
+  AppNotice,
   DashboardEmptyState,
   DashboardStatCard,
+  LoadingSkeleton,
   OpportunityCard,
 } from "../../components";
-
-// Same example records as the development prototype. Not loaded from the API.
-const sampleOpportunities = [
-  {
-    businessName: "Sample Cafe",
-    title: "Sample Weekend Brunch Feature",
-    description:
-      "Example opportunity for a local food creator to feature a weekend brunch.",
-    location: "Essex County, NJ",
-    category: "Food",
-  },
-  {
-    businessName: "Sample Garden Shop",
-    title: "Sample Spring Planter Feature",
-    description:
-      "Example opportunity for a creator to show a seasonal planter display.",
-    location: "Bergen County, NJ",
-    category: "Plants",
-  },
-  {
-    businessName: "Sample Bookstore",
-    title: "Sample Local Author Night",
-    description:
-      "Example opportunity for a creator to share a neighborhood author event.",
-    location: "Hudson County, NJ",
-    category: "Lifestyle",
-  },
-];
-
-const sampleCollaborations: Array<{
-  title: string;
-  description: string;
-  status: DashboardCampaignStatus;
-  location: string;
-  actionLabel: string;
-}> = [
-  {
-    title: "Sample Weekend Brunch",
-    description:
-      "Example pending collaboration with Sample Cafe. This is demo data, not a saved partnership.",
-    status: "Pending",
-    location: "Essex County, NJ",
-    actionLabel: "View collaboration",
-  },
-  {
-    title: "Sample Spring Planter Series",
-    description:
-      "Example completed collaboration with Sample Garden Shop. This is demo data, not a saved partnership.",
-    status: "Completed",
-    location: "Bergen County, NJ",
-    actionLabel: "View summary",
-  },
-];
-
-const sampleProfile = {
-  name: "Sample Creator",
-  niche: "Food & lifestyle",
-  county: "Essex County, NJ",
-  summary:
-    "Example profile for a local creator who posts about neighborhood food spots. This is demo data, not a saved profile.",
-};
+import { AuthError, fetchAccount, type AccountProfile } from "../../api/auth";
+import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../api/campaigns";
+import {
+  countyNameForId,
+  getCounties,
+  getCreator,
+  type County,
+  type Creator,
+} from "../../api/directory";
+import {
+  clearSession,
+  dashboardPath,
+  readSession,
+  refreshSession,
+  watchSession,
+  type Session,
+} from "../auth/session";
 
 const navItems = [
   { id: "overview", label: "Overview" },
@@ -84,18 +41,72 @@ const panelClass =
 const linkClass =
   "inline-flex min-h-9 items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 text-sm font-semibold text-white no-underline hover:bg-[var(--cg-primary-dark)]";
 
+const offerLabels = {
+  gifted: "Gifted",
+  dining: "Dining",
+  paid: "Paid",
+} as const;
+
+type AccountLoad =
+  | { status: "pending" | "ready" }
+  | { status: "error"; message: string };
+
+type OpportunityLoad =
+  | { status: "idle" | "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; campaigns: Campaign[]; businesses: BusinessSummary[]; counties: County[] };
+
 function sectionClass(current: boolean) {
   return current
     ? "rounded-xl bg-[var(--cg-background)] px-3 py-2 text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
     : "rounded-xl px-3 py-2 text-sm font-medium text-[var(--cg-muted)] no-underline hover:bg-[var(--cg-background)] hover:text-[var(--cg-primary-dark)]";
 }
 
+function isAbort(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function failureMessage(error: unknown) {
+  if (error instanceof AuthError || error instanceof Error) return error.message || "Couldn't load this dashboard.";
+  return "Couldn't load this dashboard.";
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "";
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  const date = new Date(year, month - 1, day);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function dateLabel(campaign: Campaign) {
+  const start = formatDate(campaign.starts_on);
+  const end = formatDate(campaign.ends_on);
+  if (start && end) return `${start} - ${end}`;
+  return start || end || "No dates listed";
+}
+
+function countyLabel(ids: number[], counties: County[]) {
+  if (ids.length === 0) return "No county listed";
+  const names = ids.flatMap((id) => {
+    const name = countyNameForId(id, counties);
+    return name ? [`${name} County, NJ`] : [];
+  });
+  if (names.length === 0) return ids.map((id) => `County ${id}`).join(", ");
+  return names.join(", ");
+}
+
+function roleLabel(role: Session["role"]) {
+  if (role === "creator") return "creator";
+  if (role === "business") return "business";
+  return "administrator";
+}
+
 function SectionHeading({ title, text }: { title: string; text: string }) {
   return (
     <div className="mb-4">
-      <h2 className="text-xl font-semibold text-[var(--cg-primary-dark)]">
-        {title}
-      </h2>
+      <h2 className="text-xl font-semibold text-[var(--cg-primary-dark)]">{title}</h2>
       <p className="mt-1 max-w-2xl text-sm text-[var(--cg-muted)]">{text}</p>
     </div>
   );
@@ -104,20 +115,152 @@ function SectionHeading({ title, text }: { title: string; text: string }) {
 export default function CreatorDashboard() {
   const { hash } = useLocation();
   const current = hash.replace("#", "") || "overview";
+  const [session, setSession] = useState<Session | null>(() => readSession());
+  const [accountLoad, setAccountLoad] = useState<AccountLoad>(() =>
+    readSession() ? { status: "pending" } : { status: "ready" },
+  );
+  const [account, setAccount] = useState<AccountProfile | null>(null);
+  const [creator, setCreator] = useState<Creator | null>(null);
+  const [creatorMissing, setCreatorMissing] = useState(false);
+  const [accountAttempt, setAccountAttempt] = useState(0);
+  const [opportunities, setOpportunities] = useState<OpportunityLoad>({ status: "idle" });
+  const [opportunityAttempt, setOpportunityAttempt] = useState(0);
+
+  useEffect(() => watchSession(() => setSession(readSession())), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const stored = readSession();
+    if (!stored || stored.role !== "creator") {
+      setAccount(null);
+      setCreator(null);
+      setCreatorMissing(false);
+      setAccountLoad({ status: "ready" });
+      return () => controller.abort();
+    }
+
+    setAccountLoad({ status: "pending" });
+    refreshSession(controller.signal)
+      .then(async (next) => {
+        if (controller.signal.aborted) return;
+        setSession(next);
+        if (!next || next.role !== "creator") {
+          setAccount(null);
+          setCreator(null);
+          setAccountLoad({ status: "ready" });
+          return;
+        }
+        const profile = await fetchAccount(next.accessToken, controller.signal);
+        if (controller.signal.aborted) return;
+        setAccount(profile);
+        if (profile.creatorId == null) {
+          setCreator(null);
+          setCreatorMissing(false);
+          setAccountLoad({ status: "ready" });
+          return;
+        }
+        try {
+          const record = await getCreator(profile.creatorId, controller.signal);
+          if (controller.signal.aborted) return;
+          setCreator(record.creator_id === profile.creatorId ? record : null);
+          setCreatorMissing(record.creator_id !== profile.creatorId);
+        } catch (error) {
+          if (controller.signal.aborted || isAbort(error)) return;
+          setCreator(null);
+          setCreatorMissing(true);
+        }
+        setAccountLoad({ status: "ready" });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || isAbort(error)) return;
+        if (error instanceof AuthError && error.status === 401) {
+          clearSession();
+          setSession(null);
+          setAccount(null);
+          setCreator(null);
+          setAccountLoad({ status: "ready" });
+          return;
+        }
+        setAccountLoad({ status: "error", message: failureMessage(error) });
+      });
+    return () => controller.abort();
+  }, [accountAttempt]);
+
+  useEffect(() => {
+    if (!session || session.role !== "creator") {
+      setOpportunities({ status: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    setOpportunities({ status: "loading" });
+    Promise.all([
+      listOpenCampaigns(controller.signal),
+      getBusinesses(controller.signal).catch((error: unknown) => {
+        if (isAbort(error)) throw error;
+        return [] as BusinessSummary[];
+      }),
+      getCounties(controller.signal).catch((error: unknown) => {
+        if (isAbort(error)) throw error;
+        return [] as County[];
+      }),
+    ])
+      .then(([campaigns, businesses, counties]) => {
+        if (controller.signal.aborted) return;
+        setOpportunities({
+          status: "ready",
+          campaigns: campaigns.filter((campaign) => campaign.status === "open"),
+          businesses,
+          counties,
+        });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || isAbort(error)) return;
+        setOpportunities({ status: "error", message: failureMessage(error) });
+      });
+    return () => controller.abort();
+  }, [session, opportunityAttempt]);
+
+  if (!session) {
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)]">Creator dashboard</h1>
+        <AppNotice tone="info" message="Sign in with a creator account to see your account and open campaigns." />
+        <Link to="/login" state={{ from: "/dashboard/creator" }} className={linkClass}>
+          Log in
+        </Link>
+      </div>
+    );
+  }
+
+  if (session.role !== "creator") {
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)]">Creator dashboard</h1>
+        <AppNotice
+          tone="info"
+          message={`This dashboard is for creator accounts. You are signed in as a ${roleLabel(session.role)} account.`}
+        />
+        <Link to={dashboardPath(session.role)} className={linkClass}>
+          Go to your dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  const displayName = creator?.display_name?.trim() || account?.displayName || session.email;
+  const openCount = opportunities.status === "ready" ? opportunities.campaigns.length : null;
+  const creatorCounty = creator ? countyNameForId(creator.county_id, opportunities.status === "ready" ? opportunities.counties : []) : "";
 
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-5">
-        <p className="text-xs font-semibold tracking-[0.16em] text-[var(--cg-primary)] uppercase">
-          Demo preview · Sample data
-        </p>
         <div className="max-w-2xl">
-          <h1 className="text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)] md:text-4xl">
-            Welcome back, Sample Creator
+          <h1 className="break-words text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)] md:text-4xl">
+            Welcome back, {displayName}
           </h1>
           <p className="mt-2 text-base text-[var(--cg-muted)]">
-            A sample workspace for opportunities and collaborations. This page
-            is not connected to an account, and the records below are examples.
+            {creator?.bio?.trim()
+              || "This workspace uses your signed-in account. Performance metrics and saved collaborations are not available from the current API."}
           </p>
         </div>
         <div
@@ -141,27 +284,36 @@ export default function CreatorDashboard() {
         </div>
       </div>
 
+      {accountLoad.status === "pending" && <p className="text-sm text-[var(--cg-muted)]">Checking this account...</p>}
+      {accountLoad.status === "error" && (
+        <div className="space-y-3">
+          <AppNotice tone="error" message={accountLoad.message} />
+          <AppButton variant="secondary" onPress={() => setAccountAttempt((value) => value + 1)}>
+            Try again
+          </AppButton>
+        </div>
+      )}
+
       <section id="overview" className="scroll-mt-24">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <DashboardStatCard
-            label="Available Opportunities"
-            value={sampleOpportunities.length}
+            label="Open campaigns"
+            value={openCount ?? "-"}
             icon={<Sparkles size={20} aria-hidden="true" />}
           />
           <DashboardStatCard
-            label="Pending Collaborations"
-            value={1}
+            label="Pending collaborations"
+            value="Coming soon"
             icon={<Handshake size={20} aria-hidden="true" />}
           />
           <DashboardStatCard
-            label="Completed Collaborations"
-            value={1}
+            label="Completed collaborations"
+            value="Coming soon"
             icon={<CheckCircle size={20} aria-hidden="true" />}
           />
         </div>
         <p className="mt-3 text-xs text-[var(--cg-muted)]">
-          Example counts from the sample opportunities and collaborations on
-          this page.
+          Open campaigns counts the public campaign list. It is not a personal performance metric. Collaboration totals are coming soon.
         </p>
       </section>
 
@@ -170,40 +322,57 @@ export default function CreatorDashboard() {
           <section id="opportunities" className="scroll-mt-24">
             <SectionHeading
               title="Available Opportunities"
-              text="These cards are examples. Applying from a sample card is not available."
+              text="These are public open campaigns. They are not assigned collaborations, and applying from this page is not available."
             />
             <Link
               to="/campaigns"
               className="mb-4 inline-flex text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
             >
-              Browse open campaigns
+              Browse campaigns
             </Link>
-            <div className="grid grid-cols-1 gap-4">
-              {sampleOpportunities.map((opportunity) => (
-                <OpportunityCard
-                  key={opportunity.title}
-                  {...opportunity}
-                  actionLabel="View opportunity"
-                  actionDisabled
-                />
-              ))}
-            </div>
+            {opportunities.status === "loading" && (
+              <div className="grid gap-4" aria-busy="true" aria-label="Loading open campaigns">
+                <LoadingSkeleton lines={3} />
+                <LoadingSkeleton lines={3} />
+              </div>
+            )}
+            {opportunities.status === "error" && (
+              <div className="space-y-3">
+                <AppNotice tone="error" message={opportunities.message} />
+                <AppButton variant="secondary" onPress={() => setOpportunityAttempt((value) => value + 1)}>
+                  Try again
+                </AppButton>
+              </div>
+            )}
+            {opportunities.status === "ready" && opportunities.campaigns.length === 0 && (
+              <DashboardEmptyState message="No open campaigns were returned." />
+            )}
+            {opportunities.status === "ready" && opportunities.campaigns.length > 0 && (
+              <div className="grid grid-cols-1 gap-4">
+                {opportunities.campaigns.map((campaign) => {
+                  const business = opportunities.businesses.find((item) => item.business_id === campaign.business_id);
+                  const offer = campaign.offer_type ? offerLabels[campaign.offer_type] : "Open";
+                  return (
+                    <OpportunityCard
+                      key={campaign.campaign_id}
+                      businessName={business?.name || `Business ${campaign.business_id}`}
+                      title={campaign.name}
+                      description={campaign.description?.trim() || "No description was provided."}
+                      location={`${countyLabel(campaign.county_ids, opportunities.counties)} · ${dateLabel(campaign)}`}
+                      category={offer}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <section id="collaborations" className="scroll-mt-24">
             <SectionHeading
               title="My Collaborations"
-              text="One example pending collaboration and one example completed collaboration. Opening a collaboration is coming soon, so those buttons are disabled."
+              text="The account response does not include saved partnerships."
             />
-            <div className="grid grid-cols-1 gap-4">
-              {sampleCollaborations.map((collaboration) => (
-                <CampaignCard
-                  key={collaboration.title}
-                  {...collaboration}
-                  actionDisabled
-                />
-              ))}
-            </div>
+            <DashboardEmptyState message="Collaborations are coming soon. No collaboration history is available for this account." />
           </section>
         </div>
 
@@ -213,18 +382,24 @@ export default function CreatorDashboard() {
               My Profile
             </p>
             <div className="mt-3 flex items-center gap-3">
-              <AppAvatar name={sampleProfile.name} />
-              <div>
-                <strong className="text-[var(--cg-text)]">
-                  {sampleProfile.name}
-                </strong>
-                <p className="text-sm text-[var(--cg-muted)]">{sampleProfile.niche}</p>
-                <p className="text-sm text-[var(--cg-muted)]">{sampleProfile.county}</p>
+              <AppAvatar name={displayName} imageUrl={creator?.photo_url ?? undefined} />
+              <div className="min-w-0">
+                <strong className="break-words text-[var(--cg-text)]">{displayName}</strong>
+                {creator?.niche && <p className="text-sm text-[var(--cg-muted)]">{creator.niche}</p>}
+                {creatorCounty && <p className="text-sm text-[var(--cg-muted)]">{creatorCounty}</p>}
+                {creator?.follower_range && (
+                  <p className="text-sm text-[var(--cg-muted)]">{creator.follower_range}</p>
+                )}
               </div>
             </div>
-            <p className="mt-3 text-sm text-[var(--cg-muted)]">
-              {sampleProfile.summary}
-            </p>
+            <p className="mt-3 break-words text-sm text-[var(--cg-muted)]">{session.email}</p>
+            {!creator && accountLoad.status === "ready" && (
+              <p className="mt-3 text-sm text-[var(--cg-muted)]">
+                {creatorMissing
+                  ? "The creator profile for this account was not returned."
+                  : "The account response does not include a creator profile. Niche, county, and photo are unavailable."}
+              </p>
+            )}
             <div className="mt-4 flex flex-col items-start gap-1">
               <AppButton isDisabled>Edit profile</AppButton>
               <span className="text-xs text-[var(--cg-muted)]">Coming soon</span>
@@ -232,28 +407,21 @@ export default function CreatorDashboard() {
           </section>
 
           <section className={panelClass} aria-labelledby="creator-actions">
-            <h2
-              id="creator-actions"
-              className="text-base font-semibold text-[var(--cg-primary-dark)]"
-            >
+            <h2 id="creator-actions" className="text-base font-semibold text-[var(--cg-primary-dark)]">
               Quick actions
             </h2>
             <div className="mt-4 flex flex-col items-start gap-4">
               <div className="flex flex-col gap-1">
                 <Link to="/campaigns" className={linkClass}>
-                  Browse open campaigns
+                  Browse campaigns
                 </Link>
-                <span className="text-xs text-[var(--cg-muted)]">
-                  Opens the public campaign list
-                </span>
+                <span className="text-xs text-[var(--cg-muted)]">Opens the public campaign list</span>
               </div>
               <div className="flex flex-col gap-1">
                 <Link to="/discover?type=business" className={linkClass}>
                   Discover businesses
                 </Link>
-                <span className="text-xs text-[var(--cg-muted)]">
-                  Opens the business directory
-                </span>
+                <span className="text-xs text-[var(--cg-muted)]">Opens the business directory</span>
               </div>
             </div>
           </section>
@@ -261,11 +429,8 @@ export default function CreatorDashboard() {
       </div>
 
       <section id="settings" className="scroll-mt-24">
-        <SectionHeading
-          title="Settings"
-          text="Account preferences are not available in this demo."
-        />
-        <DashboardEmptyState message="Settings are coming soon. Creator account preferences are not available in this demo." />
+        <SectionHeading title="Settings" text="Account preferences are not available yet." />
+        <DashboardEmptyState message="Settings are coming soon." />
       </section>
     </div>
   );

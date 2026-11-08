@@ -53,8 +53,11 @@ async function loadAccount(token: string | null, signal: AbortSignal) {
   }
 }
 
+const hiddenRecords = "Administrator records are unavailable for this account.";
+
 export function useAdminData(input: {
   token: string | null;
+  blocked: boolean;
   preview: "loading" | "empty" | null;
   waitlistActive: boolean;
   waitlistQuery: WaitlistQuery;
@@ -88,6 +91,17 @@ export function useAdminData(input: {
 
   useEffect(() => {
     if (input.preview) return;
+    if (input.blocked) {
+      setRefreshing(false);
+      setRefreshError("");
+      setAccount(null);
+      setAccounts({ status: "error", message: hiddenRecords, data: emptyAccounts });
+      setWaitlist({ status: "error", message: hiddenRecords, data: [] });
+      setCampaigns({ status: "error", message: hiddenRecords, data: [] });
+      setWaitlistView(null);
+      setCampaignView(null);
+      return;
+    }
     const controller = new AbortController();
     const { signal } = controller;
     let ignore = false;
@@ -166,13 +180,13 @@ export function useAdminData(input: {
       ignore = true;
       controller.abort();
     };
-  }, [input.preview, input.token, retry]);
+  }, [input.blocked, input.preview, input.token, retry]);
 
   const waitlistKey = JSON.stringify(input.waitlistQuery);
   const campaignKey = JSON.stringify(input.campaignQuery);
 
   useEffect(() => {
-    if (input.preview || !input.waitlistActive) {
+    if (input.preview || input.blocked || !input.waitlistActive) {
       setWaitlistView(null);
       return;
     }
@@ -189,10 +203,10 @@ export function useAdminData(input: {
         setWaitlistView({ status: "error", message: toMessage(error), data: [] });
       });
     return () => controller.abort();
-  }, [input.preview, input.token, input.waitlistActive, waitlistKey, retry]);
+  }, [input.blocked, input.preview, input.token, input.waitlistActive, waitlistKey, retry]);
 
   useEffect(() => {
-    if (input.preview || !input.campaignActive) {
+    if (input.preview || input.blocked || !input.campaignActive) {
       setCampaignView(null);
       return;
     }
@@ -209,7 +223,7 @@ export function useAdminData(input: {
         setCampaignView({ status: "error", message: toMessage(error), data: [] });
       });
     return () => controller.abort();
-  }, [input.preview, input.token, input.campaignActive, campaignKey, retry]);
+  }, [input.blocked, input.preview, input.token, input.campaignActive, campaignKey, retry]);
 
   const loadingAccounts: Resource<AccountsByStatus> = {
     status: "loading",

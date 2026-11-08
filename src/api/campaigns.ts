@@ -8,6 +8,9 @@
 // PATCH /api/v1/campaigns/{campaign_id} can set status to draft, open, or closed.
 // Publishing means status "open". There is no "published" status.
 // Deliverable requirements are omitted from updates once a campaign is open.
+// GET /api/v1/campaigns accepts an optional status and an optional bearer token.
+// There is no business_id filter. Callers must keep only campaigns for a business
+// the signed-in account is allowed to view.
 // GET /api/v1/campaigns?status=open is the public discovery list.
 // This is separate from the creator deliverable submission API.
 
@@ -151,9 +154,82 @@ function updateBody(input: Partial<CampaignInput> & { status?: CampaignStatus })
   return body;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function parseRequirements(value: unknown): DeliverableRequirement[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const requirements: DeliverableRequirement[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const deliverableType = item.deliverable_type;
+    const quantity = item.quantity;
+    if (deliverableType !== "post" && deliverableType !== "story" && deliverableType !== "reel") continue;
+    if (typeof quantity !== "number" || !Number.isInteger(quantity) || quantity < 1) continue;
+    requirements.push({ deliverable_type: deliverableType, quantity });
+  }
+  return requirements;
+}
+
+function parseCampaign(value: unknown): Campaign | null {
+  if (!isRecord(value)) return null;
+  const campaignId = value.campaign_id;
+  const businessId = value.business_id;
+  const name = value.name;
+  const status = value.status;
+  if (typeof campaignId !== "number" || !Number.isInteger(campaignId)) return null;
+  if (typeof businessId !== "number" || !Number.isInteger(businessId)) return null;
+  if (typeof name !== "string" || !name.trim()) return null;
+  if (status !== "draft" && status !== "open" && status !== "closed") return null;
+
+  const offer = value.offer_type;
+  const description = value.description;
+  const startsOn = value.starts_on;
+  const endsOn = value.ends_on;
+  return {
+    campaign_id: campaignId,
+    business_id: businessId,
+    name,
+    description: typeof description === "string" ? description : null,
+    status,
+    offer_type: offer === "gifted" || offer === "dining" || offer === "paid" ? offer : null,
+    starts_on: typeof startsOn === "string" ? startsOn : null,
+    ends_on: typeof endsOn === "string" ? endsOn : null,
+    county_ids: Array.isArray(value.county_ids)
+      ? value.county_ids.filter((id): id is number => typeof id === "number" && Number.isInteger(id))
+      : [],
+    deliverable_requirements: parseRequirements(value.deliverable_requirements),
+  };
+}
+
+export function listCampaigns(options: {
+  signal?: AbortSignal;
+  token?: string | null;
+  status?: CampaignStatus;
+} = {}) {
+  const query = options.status ? `?status=${encodeURIComponent(options.status)}` : "";
+  return request<unknown>(`/api/v1/campaigns${query}`, {
+    signal: options.signal,
+    token: options.token || undefined,
+  }).then((body) => {
+    if (!Array.isArray(body)) {
+      throw new CampaignApiError(200, "Campaign list was not in the expected format.");
+    }
+    const campaigns = body.flatMap((item) => {
+      const campaign = parseCampaign(item);
+      return campaign ? [campaign] : [];
+    });
+    if (body.length > 0 && campaigns.length === 0) {
+      throw new CampaignApiError(200, "Campaign list was not in the expected format.");
+    }
+    return campaigns;
+  });
+}
+
 export function listOpenCampaigns(signal: AbortSignal) {
-  return request<Campaign[]>("/api/v1/campaigns?status=open", { signal }).then(
-    (campaigns) => campaigns.filter((campaign) => campaign.status === "open"),
+  return listCampaigns({ signal, status: "open" }).then((campaigns) =>
+    campaigns.filter((campaign) => campaign.status === "open"),
   );
 }
 

@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
 import { AuthError, fetchAccount, roleOf, type AccountRole, type Session } from "../../api/auth";
 
 const storageKey = "collabgarden.session";
@@ -57,6 +59,24 @@ export function clearSession() {
 export function watchSession(onChange: () => void) {
   window.addEventListener(sessionEvent, onChange);
   return () => window.removeEventListener(sessionEvent, onChange);
+}
+
+export function dashboardPath(role: AccountRole) {
+  if (role === "business") return "/dashboard/business";
+  if (role === "creator") return "/dashboard/creator";
+  return "/dashboard/admin";
+}
+
+export function useLiveSession() {
+  const { pathname } = useLocation();
+  const [session, setSession] = useState<Session | null>(() => readSession());
+
+  useEffect(() => {
+    setSession(readSession());
+    return watchSession(() => setSession(readSession()));
+  }, [pathname]);
+
+  return session;
 }
 
 function sameSession(left: Session, right: Session) {

@@ -25,7 +25,6 @@ import {
   FoundingMemberCard,
   LoadingSkeleton,
   PendingAccountCard,
-  PublicNavbar,
   adminStatusLabel,
   type NavItem,
 } from "../../components";
@@ -57,6 +56,7 @@ import {
   offerLabel,
   roleLabel,
 } from "./format";
+import { SiteHeader } from "../auth/SiteHeader";
 import { isBlockedRole, readStoredSession, watchStoredSession } from "./session";
 import { useAdminData, type Resource } from "./useAdminData";
 
@@ -84,11 +84,6 @@ const adminLinks: NavItem[] = [
   { label: "Founding members", to: "/dashboard/admin/founding-members", icon: Sparkles },
   { label: "Campaigns", to: "/dashboard/admin/campaigns", icon: Megaphone },
   { label: "Accounts", to: "/dashboard/admin/accounts", icon: Users },
-];
-
-const publicLinks = [
-  { label: "Home", to: "/" },
-  { label: "Discover", to: "/discover" },
 ];
 
 const textLink = "text-sm font-semibold text-[var(--cg-primary-dark)] no-underline";
@@ -283,8 +278,10 @@ export default function AdminDashboardPage() {
     campaignQuery.status || campaignQuery.county_id || campaignQuery.starts_after || campaignQuery.ends_before,
   );
 
+  const sessionBlocked = isBlockedRole(session?.role);
   const data = useAdminData({
-    token: session?.accessToken ?? null,
+    token: sessionBlocked ? null : session?.accessToken ?? null,
+    blocked: sessionBlocked,
     preview,
     waitlistActive,
     waitlistQuery,
@@ -294,8 +291,9 @@ export default function AdminDashboardPage() {
 
   const role = data.account?.role ?? session?.role ?? null;
   const email = data.account?.email ?? session?.email ?? null;
-  const blocked = isBlockedRole(role);
+  const blocked = sessionBlocked || isBlockedRole(role);
   const listsReady =
+    !blocked &&
     data.accounts.status === "ready" &&
     data.waitlist.status === "ready" &&
     data.campaigns.status === "ready";
@@ -320,6 +318,12 @@ export default function AdminDashboardPage() {
         message: "Preview: empty administrator lists. These are not live records, and actions stay disabled.",
       };
     }
+    if (session && blocked) {
+      return {
+        tone: "error",
+        message: `This session is a ${roleLabel(role)} account. Administrator records stay hidden and actions stay disabled.`,
+      };
+    }
     const apiMessage = data.accounts.message || data.refreshError;
     const apiLine = apiMessage ? ` The API responded: ${apiMessage}` : "";
     if (data.accounts.status === "loading") {
@@ -331,12 +335,6 @@ export default function AdminDashboardPage() {
       return {
         tone: "error",
         message: `Sign in with an administrator account. Actions stay disabled until that session is available.${apiLine}`,
-      };
-    }
-    if (blocked) {
-      return {
-        tone: "error",
-        message: `This session is a ${roleLabel(role)} account. Administrator actions stay disabled.${apiLine}`,
       };
     }
     if (canAdminister) {
@@ -529,12 +527,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#f8f8f0] text-[var(--cg-text)]">
-      <header className="site-header">
-        <PublicNavbar
-          links={publicLinks}
-          account={session ? { label: "Log out", to: "/logout" } : { label: "Login", to: "/login" }}
-        />
-      </header>
+      <SiteHeader />
 
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row md:px-8 md:py-8">
         <div className="w-full shrink-0 md:w-60">
@@ -563,7 +556,7 @@ export default function AdminDashboardPage() {
           </div>
 
           <AppNotice tone={access.tone} message={access.message} />
-          {data.refreshError && data.accounts.status === "ready" && (
+          {data.refreshError && !blocked && data.accounts.status === "ready" && (
             <AppNotice tone="error" message={data.refreshError} />
           )}
           {actionNotice && (
@@ -576,7 +569,7 @@ export default function AdminDashboardPage() {
             </div>
           )}
           {section === "overview" && (
-            data.accounts.status === "loading" ? (
+            !blocked && data.accounts.status === "loading" ? (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Loading administrator data">
                 <LoadingSkeleton />
                 <LoadingSkeleton />
@@ -660,11 +653,11 @@ export default function AdminDashboardPage() {
 
           {section === "approvals" && (
             <>
-              {data.accounts.status === "ready" && (
+              {!blocked && data.accounts.status === "ready" && (
                 <AppSearch label="Search approvals" value={query} onChange={setQuery} placeholder="Search name or account id" />
               )}
               <ResourceBody
-                status={data.accounts.status}
+                status={blocked ? "error" : data.accounts.status}
                 message={data.accounts.message}
                 isEmpty={pendingAccounts.length === 0}
                 emptyTitle="No pending accounts"
@@ -681,7 +674,7 @@ export default function AdminDashboardPage() {
 
           {section === "founding-members" && (
             <>
-              {data.waitlist.status === "ready" && (
+              {!blocked && data.waitlist.status === "ready" && (
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <AppSelect
                     label="Role"
@@ -734,11 +727,11 @@ export default function AdminDashboardPage() {
                   />
                 </div>
               )}
-              {data.waitlist.status === "ready" && (
+              {!blocked && data.waitlist.status === "ready" && (
                 <AppSearch label="Search founding members" value={query} onChange={setQuery} placeholder="Search name or email" />
               )}
               <ResourceBody
-                status={waitlistSource.status}
+                status={blocked ? "error" : waitlistSource.status}
                 message={waitlistSource.message}
                 isEmpty={visibleMembers.length === 0}
                 emptyTitle="No founding members"
@@ -761,7 +754,7 @@ export default function AdminDashboardPage() {
                   Change status
                 </AppButton>
               </div>
-              {data.campaigns.status === "ready" && (
+              {!blocked && data.campaigns.status === "ready" && (
                 <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <AppSelect
                     label="Status"
@@ -786,11 +779,11 @@ export default function AdminDashboardPage() {
                   <DateField label="Ends before" value={endsBefore} onChange={setEndsBefore} />
                 </div>
               )}
-              {data.campaigns.status === "ready" && (
+              {!blocked && data.campaigns.status === "ready" && (
                 <AppSearch label="Search campaigns" value={query} onChange={setQuery} placeholder="Search campaign or business" />
               )}
               <ResourceBody
-                status={campaignSource.status}
+                status={blocked ? "error" : campaignSource.status}
                 message={campaignSource.message}
                 isEmpty={visibleCampaigns.length === 0}
                 emptyTitle="No campaigns"
@@ -849,7 +842,7 @@ export default function AdminDashboardPage() {
 
           {section === "accounts" && (
             <>
-              {data.accounts.status === "ready" && (
+              {!blocked && data.accounts.status === "ready" && (
                 <div className="grid gap-3 md:grid-cols-2">
                   <AppSelect
                     label="Status"
@@ -868,7 +861,7 @@ export default function AdminDashboardPage() {
                 </div>
               )}
               <ResourceBody
-                status={data.accounts.status}
+                status={blocked ? "error" : data.accounts.status}
                 message={data.accounts.message}
                 isEmpty={visibleAccounts.length === 0}
                 emptyTitle="No accounts"

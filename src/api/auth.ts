@@ -4,10 +4,10 @@
 // The OpenAPI document leaves that response schema untyped.
 // GET /auth/me is also untyped in OpenAPI and now returns the signed-in account:
 // id, email, role, business_id, and business_ids.
-// Creators receive null business identifiers. role is "business" or "creator".
+// Creators receive null business identifiers. role is "business", "creator", or "admin".
 // The browser copy of this session lives in src/pages/auth/session.ts.
 
-export type AccountRole = "business" | "creator";
+export type AccountRole = "business" | "creator" | "admin";
 
 export type Session = {
   accessToken: string;
@@ -64,7 +64,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function roleOf(value: unknown): AccountRole | null {
-  return value === "business" || value === "creator" ? value : null;
+  return value === "business" || value === "creator" || value === "admin" ? value : null;
 }
 
 function integerId(value: unknown) {
@@ -83,6 +83,8 @@ export type AccountProfile = {
   role: AccountRole;
   businessId: number | null;
   businessIds: number[] | null;
+  creatorId: number | null;
+  displayName: string | null;
 };
 
 export function parseAccount(body: unknown): AccountProfile {
@@ -117,7 +119,15 @@ export function parseAccount(body: unknown): AccountProfile {
     });
   }
 
-  return { id, email, role, businessId, businessIds };
+  let creatorId: number | null = null;
+  if ("creator_id" in account && account.creator_id != null) {
+    creatorId = integerId(account.creator_id);
+  }
+  const displayName = typeof account.display_name === "string" && account.display_name.trim()
+    ? account.display_name.trim()
+    : null;
+
+  return { id, email, role, businessId, businessIds, creatorId, displayName };
 }
 
 // Ids the account is allowed to use. Nothing is added that /auth/me did not return.

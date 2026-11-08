@@ -63,7 +63,12 @@ export function DashboardStatCard({
       )}
       <div className="min-w-0">
         <div className="text-sm text-[var(--cg-muted)]">{label}</div>
-        <div className="text-2xl font-bold text-[var(--cg-text)]">{value}</div>
+        <div className={typeof value === "number" || String(value).length <= 4
+          ? "text-2xl font-bold text-[var(--cg-text)]"
+          : "text-lg font-semibold text-[var(--cg-text)]"}
+        >
+          {value}
+        </div>
       </div>
     </Card>
   );
@@ -73,7 +78,9 @@ export type DashboardCampaignStatus =
   | "Draft"
   | "Active"
   | "Pending"
-  | "Completed";
+  | "Completed"
+  | "Open"
+  | "Closed";
 
 const statusColor: Record<
   DashboardCampaignStatus,
@@ -83,6 +90,8 @@ const statusColor: Record<
   Active: "accent",
   Pending: "warning",
   Completed: "success",
+  Open: "accent",
+  Closed: "success",
 };
 
 export interface CampaignCardProps {
@@ -92,6 +101,7 @@ export interface CampaignCardProps {
   location?: string;
   budget?: string;
   date?: string;
+  note?: string;
   actionLabel?: string;
   onAction?: () => void;
   actionDisabled?: boolean;
@@ -104,6 +114,7 @@ export function CampaignCard({
   location,
   budget,
   date,
+  note,
   actionLabel,
   onAction,
   actionDisabled = false,
@@ -120,6 +131,7 @@ export function CampaignCard({
         </Chip>
       </div>
       <p className="text-sm">{description}</p>
+      {note && <p className="text-sm">{note}</p>}
       {details.length > 0 && (
         <p className="text-sm">{details.join(" · ")}</p>
       )}
