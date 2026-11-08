@@ -23,6 +23,7 @@ import SignupPage from "./pages/auth/SignupPage";
 import LandingPage from "./pages/landing/LandingPage";
 import CampaignListPage from "./pages/campaigns/CampaignListPage";
 import NewCampaignPage from "./pages/campaigns/NewCampaignPage";
+import EditCampaignPage from "./pages/campaigns/EditCampaignPage";
 import BusinessDashboardPage from "./pages/dashboard/BusinessDashboardPage";
 import CreatorDashboardPage from "./pages/dashboard/CreatorDashboardPage";
 import BusinessDashboard from "./pages/dashboard/BusinessDashboard";
@@ -212,6 +213,8 @@ export default function App() {
         <Route path="campaigns" element={<CampaignListPage />} />
 
         <Route path="campaigns/new" element={<NewCampaignPage />} />
+
+        <Route path="campaigns/:campaignId/edit" element={<EditCampaignPage />} />
 
         <Route path="login" element={<LoginPage />} />
 

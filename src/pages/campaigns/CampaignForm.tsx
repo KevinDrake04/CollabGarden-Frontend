@@ -129,6 +129,43 @@ export function emptyCampaignForm(): CampaignFormValues {
   };
 }
 
+function dateInputValue(value: string | null | undefined) {
+  if (!value) return "";
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+  return match?.[1] ?? "";
+}
+
+export function campaignToFormValues(campaign: {
+  name: string;
+  description?: string | null;
+  offer_type?: string | null;
+  starts_on?: string | null;
+  ends_on?: string | null;
+  county_ids?: number[] | null;
+  deliverable_requirements?: { deliverable_type: string; quantity: number }[] | null;
+}): CampaignFormValues {
+  const saved = campaign.deliverable_requirements ?? [];
+  const requirements = saved.length > 0
+    ? saved.map((requirement) => ({
+      ...blankRequirement(),
+      deliverableType: requirement.deliverable_type,
+      quantity: Number.isInteger(requirement.quantity) && requirement.quantity > 0
+        ? String(requirement.quantity)
+        : "",
+    }))
+    : [blankRequirement()];
+
+  return {
+    name: campaign.name ?? "",
+    description: campaign.description ?? "",
+    requirements,
+    startsOn: dateInputValue(campaign.starts_on),
+    endsOn: dateInputValue(campaign.ends_on),
+    countyIds: (campaign.county_ids ?? []).filter((id) => Number.isInteger(id)),
+    offerType: campaign.offer_type ?? "",
+  };
+}
+
 export function validateCampaignForm(values: CampaignFormValues): CampaignFormErrors {
   const errors: CampaignFormErrors = {};
 

@@ -8,6 +8,10 @@
 // PATCH /api/v1/campaigns/{campaign_id} can set status to draft, open, or closed.
 // Publishing means status "open". There is no "published" status.
 // Deliverable requirements are omitted from updates once a campaign is open.
+// GET /api/v1/campaigns/{campaign_id} reads one campaign. Callers must still
+// reject a campaign whose business_id is outside the signed-in account's
+// business ids. A draft missing from that read is taken from the authenticated
+// list when the same id is present. Updating an existing id uses PATCH only.
 // GET /api/v1/campaigns accepts an optional status and an optional bearer token.
 // There is no business_id filter. Callers must keep only campaigns for a business
 // the signed-in account is allowed to view.
@@ -172,15 +176,21 @@ function parseRequirements(value: unknown): DeliverableRequirement[] | undefined
   return requirements;
 }
 
-function parseCampaign(value: unknown): Campaign | null {
+function parseCampaign(value: unknown, options?: { allowIncomplete?: boolean }): Campaign | null {
   if (!isRecord(value)) return null;
   const campaignId = value.campaign_id;
   const businessId = value.business_id;
-  const name = value.name;
+  const rawName = value.name;
   const status = value.status;
   if (typeof campaignId !== "number" || !Number.isInteger(campaignId)) return null;
   if (typeof businessId !== "number" || !Number.isInteger(businessId)) return null;
-  if (typeof name !== "string" || !name.trim()) return null;
+  const name = typeof rawName === "string"
+    ? rawName
+    : options?.allowIncomplete && rawName == null
+      ? ""
+      : null;
+  if (name == null) return null;
+  if (!options?.allowIncomplete && !name.trim()) return null;
   if (status !== "draft" && status !== "open" && status !== "closed") return null;
 
   const offer = value.offer_type;
@@ -233,6 +243,27 @@ export function listOpenCampaigns(signal: AbortSignal) {
   );
 }
 
+export async function getCampaign(campaignId: number, token: string, signal?: AbortSignal) {
+  if (!Number.isInteger(campaignId) || campaignId < 1) {
+    throw new CampaignApiError(404, "This draft could not be found.");
+  }
+
+  try {
+    const body = await request<unknown>(`/api/v1/campaigns/${campaignId}`, { token, signal });
+    const campaign = parseCampaign(body, { allowIncomplete: true });
+    if (!campaign || campaign.campaign_id !== campaignId) {
+      throw new CampaignApiError(200, "Campaign was not in the expected format.");
+    }
+    return campaign;
+  } catch (error) {
+    if (!(error instanceof CampaignApiError) || error.status !== 404) throw error;
+    const listed = await listCampaigns({ token, signal });
+    const match = listed.find((campaign) => campaign.campaign_id === campaignId);
+    if (!match) throw error;
+    return match;
+  }
+}
+
 export function getBusinesses(signal: AbortSignal) {
   return request<BusinessSummary[]>("/api/v1/businesses", { signal });
 }
@@ -263,6 +294,45 @@ export function updateCampaign(
     token,
     signal,
   });
+}
+
+// Fields and status for a campaign that already exists. This never calls POST.
+export async function saveExistingCampaign(options: {
+  campaignId: number;
+  input: CampaignInput;
+  target: Extract<CampaignStatus, "draft" | "open">;
+  token: string;
+  includeRequirements: boolean;
+  signal?: AbortSignal;
+}) {
+  const { campaignId, input, target, token, includeRequirements, signal } = options;
+  if (!Number.isInteger(campaignId) || campaignId < 1) {
+    throw new CampaignApiError(404, "This draft could not be found.");
+  }
+  const fields: Partial<CampaignInput> = {
+    name: input.name,
+    description: input.description,
+    offer_type: input.offer_type,
+    starts_on: input.starts_on,
+    ends_on: input.ends_on,
+    county_ids: input.county_ids,
+  };
+  if (includeRequirements) fields.deliverable_requirements = input.deliverable_requirements;
+
+  if (includeRequirements && target === "open") {
+    const saved = await updateCampaign(campaignId, fields, token, signal);
+    if (saved.status === "open") return saved;
+    try {
+      return await updateCampaign(campaignId, { status: "open" }, token, signal);
+    } catch (error) {
+      if (error instanceof CampaignApiError) {
+        throw new CampaignApiError(error.status, error.message, saved);
+      }
+      throw error;
+    }
+  }
+
+  return updateCampaign(campaignId, { ...fields, status: target }, token, signal);
 }
 
 // Create sends no status. A follow-up update sets draft or open when the
@@ -296,28 +366,12 @@ export async function submitCampaign(options: {
     }
   }
 
-  const fields: Partial<CampaignInput> = {
-    name: input.name,
-    description: input.description,
-    offer_type: input.offer_type,
-    starts_on: input.starts_on,
-    ends_on: input.ends_on,
-    county_ids: input.county_ids,
-  };
-  if (includeRequirements) fields.deliverable_requirements = input.deliverable_requirements;
-
-  if (includeRequirements && target === "open") {
-    const saved = await updateCampaign(campaignId, fields, token, signal);
-    if (saved.status === "open") return saved;
-    try {
-      return await updateCampaign(campaignId, { status: "open" }, token, signal);
-    } catch (error) {
-      if (error instanceof CampaignApiError) {
-        throw new CampaignApiError(error.status, error.message, saved);
-      }
-      throw error;
-    }
-  }
-
-  return updateCampaign(campaignId, { ...fields, status: target }, token, signal);
+  return saveExistingCampaign({
+    campaignId,
+    input,
+    target,
+    token,
+    includeRequirements,
+    signal,
+  });
 }

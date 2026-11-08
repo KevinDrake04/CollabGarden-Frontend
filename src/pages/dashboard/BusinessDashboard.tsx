@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Handshake, List, Megaphone } from "lucide-react";
 import {
   AppAvatar,
@@ -151,6 +151,7 @@ function SectionHeading({ title, text }: { title: string; text: string }) {
 
 export default function BusinessDashboard() {
   const { hash } = useLocation();
+  const navigate = useNavigate();
   const current = hash.replace("#", "") || "overview";
   const [session, setSession] = useState<Session | null>(() => readSession());
   const [accountState, setAccountState] = useState<"pending" | "ready" | "error">(() =>
@@ -442,6 +443,7 @@ export default function BusinessDashboard() {
                   <div className="grid grid-cols-1 gap-4">
                     {campaignLoad.campaigns.map((campaign) => {
                       const note = campaignNote(campaign);
+                      const draft = campaign.status === "draft";
                       return (
                         <CampaignCard
                           key={campaign.campaign_id}
@@ -451,6 +453,10 @@ export default function BusinessDashboard() {
                           location={countyLabel(campaign.county_ids, campaignLoad.counties)}
                           date={dateLabel(campaign)}
                           note={note || undefined}
+                          actionLabel={draft ? "Edit draft" : undefined}
+                          onAction={draft
+                            ? () => navigate(`/campaigns/${campaign.campaign_id}/edit`)
+                            : undefined}
                         />
                       );
                     })}
