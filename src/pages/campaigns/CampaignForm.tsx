@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { AppButton, AppInput, AppSelect, AppTextarea } from "../../components";
 
@@ -214,7 +214,7 @@ type CampaignFormProps = {
   banner?: ReactNode;
 };
 
-const cardClass = "rounded-2xl border border-[var(--cg-border)] bg-white p-5 shadow-sm md:p-6";
+const cardClass = "scroll-mt-28 rounded-2xl border border-[var(--cg-border)] bg-white p-5 shadow-sm md:p-6";
 const headingClass = "text-lg font-semibold text-[var(--cg-primary-dark)]";
 const errorClass = "text-xs text-[var(--cg-error)]";
 
@@ -533,6 +533,26 @@ function Actions({
   );
 }
 
+function firstErrorSection(errors: CampaignFormErrors) {
+  if (
+    errors.name
+    || errors.description
+    || errors.offerType
+    || errors.requirements
+    || Object.values(errors.requirementRows ?? {}).some((row) => row.deliverableType || row.quantity)
+  ) {
+    return "campaign-details";
+  }
+  if (errors.startsOn || errors.endsOn) return "campaign-schedule";
+  if (errors.countyIds) return "campaign-counties";
+  return null;
+}
+
+function scrollBelowHeader(element: HTMLElement) {
+  element.style.scrollMarginTop = "7rem";
+  element.scrollIntoView({ block: "start" });
+}
+
 export default function CampaignForm({
   values,
   errors,
@@ -548,6 +568,16 @@ export default function CampaignForm({
 }: CampaignFormProps) {
   const latest = useRef(values);
   latest.current = values;
+
+  useEffect(() => {
+    if (variant !== "page") return;
+    const sectionId = firstErrorSection(errors);
+    if (!sectionId) return;
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    const invalid = section.querySelector<HTMLElement>("[aria-invalid='true']");
+    scrollBelowHeader(invalid ?? section);
+  }, [errors, variant]);
 
   function update(patch: Partial<CampaignFormValues>) {
     const next = { ...latest.current, ...patch };
@@ -594,7 +624,7 @@ export default function CampaignForm({
       selected={values.countyIds}
       error={errors.countyIds}
       showLegend={variant !== "page"}
-      labelId={variant === "page" ? "campaign-counties" : undefined}
+      labelId={variant === "page" ? "campaign-counties-label" : undefined}
       onChange={(countyIds) => update({ countyIds })}
     />
   );
@@ -611,16 +641,16 @@ export default function CampaignForm({
   if (variant === "page") {
     return (
       <div className="space-y-5">
-        <section className={`${cardClass} space-y-4`}>
+        <section id="campaign-details" className={`${cardClass} space-y-4`}>
           <h2 className={headingClass}>Campaign details</h2>
           {details}
         </section>
-        <section className={`${cardClass} space-y-4`}>
+        <section id="campaign-schedule" className={`${cardClass} space-y-4`}>
           <h2 className={headingClass}>Schedule</h2>
           {schedule}
         </section>
-        <section className={`${cardClass} space-y-4`}>
-          <h2 id="campaign-counties" className={headingClass}>Counties</h2>
+        <section id="campaign-counties" className={`${cardClass} space-y-4`}>
+          <h2 id="campaign-counties-label" className={headingClass}>Counties</h2>
           {countiesField}
         </section>
         <section className={cardClass}>

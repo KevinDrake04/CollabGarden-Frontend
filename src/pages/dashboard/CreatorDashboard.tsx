@@ -279,7 +279,7 @@ export default function CreatorDashboard() {
         <h1 className="text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)]">Creator dashboard</h1>
         <AppNotice
           tone="info"
-          message={`This dashboard is for creator accounts. You are signed in as a ${roleLabel(session.role)} account.`}
+          message={`This dashboard is for creator accounts. You are signed in as ${session.role === "admin" ? "an" : "a"} ${roleLabel(session.role)} account.`}
         />
         <Link to={dashboardPath(session.role)} className={linkClass}>
           Go to your dashboard
@@ -355,7 +355,7 @@ export default function CreatorDashboard() {
           />
         </div>
         <p className="mt-3 text-xs text-[var(--cg-muted)]">
-          Open campaigns counts the public campaign list. Submitted and approved counts are deliverables this account can read.
+          Open campaigns are public. Submitted and approved are deliverables you can read.
         </p>
       </section>
 

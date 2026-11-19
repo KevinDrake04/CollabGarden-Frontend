@@ -51,6 +51,7 @@ export function DeliverableStatusBadge({ status }: { status: string }) {
         size="sm"
         variant="soft"
         color={known ? statusColors[status as DeliverableStatus] : "default"}
+        className={status === "revision_requested" ? "bg-[#f6e4c4] text-[#6d4510]" : undefined}
       >
         {deliverableStatusLabel(status)}
       </Chip>

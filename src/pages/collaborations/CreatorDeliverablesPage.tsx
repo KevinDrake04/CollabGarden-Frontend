@@ -121,7 +121,7 @@ export default function CreatorDeliverablesPage() {
         <div className="flex flex-col items-start gap-3">
           <AppNotice
             tone="info"
-            message={`This page is for creator accounts. You are signed in as a ${roleLabel(view.role)} account.`}
+            message={`This page is for creator accounts. You are signed in as ${view.role === "admin" ? "an" : "a"} ${roleLabel(view.role)} account.`}
           />
           <Link to={dashboardPath(view.role)} className={linkClass}>
             Go to your dashboard

@@ -344,7 +344,7 @@ export default function BusinessDashboard() {
         <h1 className="text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)]">Business dashboard</h1>
         <AppNotice
           tone="info"
-          message={`This dashboard is for business accounts. You are signed in as a ${roleLabel(session.role)} account.`}
+          message={`This dashboard is for business accounts. You are signed in as ${session.role === "admin" ? "an" : "a"} ${roleLabel(session.role)} account.`}
         />
         <Link to={dashboardPath(session.role)} className={linkClass}>
           Go to your dashboard
@@ -451,7 +451,7 @@ export default function BusinessDashboard() {
               />
             </div>
             <p className="mt-3 text-xs text-[var(--cg-muted)]">
-              Open campaigns and campaigns returned use the campaign list for the selected business. Campaigns for other businesses are not shown. Draft and closed campaigns appear only when that response includes them. Submitted deliverables counts deliverables with status submitted for this business.
+              Counts are for the selected business. Submitted means a deliverable is waiting for review.
             </p>
           </section>
 
