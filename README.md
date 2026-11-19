@@ -29,7 +29,7 @@ Copy `.env.example` to `.env.local` and set `VITE_API_URL` to the backend origin
 pnpm dev
 ```
 
-Open http://localhost:5173. The API allows that origin. `http://127.0.0.1:5173` is a different origin, and directory requests will fail if you use it.
+Open http://localhost:5173. The API allows that origin.
 
 Check the production build:
 
@@ -55,5 +55,3 @@ The container runs `pnpm dev` and publishes port 5173. Stop it with `docker comp
 - Business dashboard for the overview, campaigns, creating or editing a campaign, deliverable review, and account
 - Creator dashboard for the overview, open campaigns, deliverable submission, and account
 - Admin dashboard
-
-Messages, payments, and profile editing under `/dev` are still placeholders. `/dev/components` previews shared components with sample data. The directory and profiles are read-only. Signup creates an account, and the account pages show the saved profile. There is no public campaign detail page. A signed-in business edits its own campaigns.
