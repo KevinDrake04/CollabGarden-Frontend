@@ -1,8 +1,21 @@
 # CollabGarden Frontend
 
-React frontend for CollabGarden. It uses TypeScript, Vite, HeroUI, Lucide, and Tailwind CSS.
+## About CollabGarden
 
-## Setup
+CollabGarden connects local New Jersey businesses with content creators. This repo is the frontend. It talks to a separate backend API.
+
+Visitors can browse businesses and creators, open a profile, and sign up as either role. After login, a business can manage campaigns and review deliverables, and a creator can look through open campaigns and submit deliverables. Administrators have their own dashboard.
+
+## Tech Stack
+
+- React and TypeScript
+- Vite
+- React Router
+- Tailwind CSS and HeroUI
+- Lucide for icons
+- pnpm
+
+## Getting Started
 
 Use Node.js 22. Dependencies are locked with pnpm.
 
@@ -16,7 +29,7 @@ Copy `.env.example` to `.env.local` and set `VITE_API_URL` to the backend origin
 pnpm dev
 ```
 
-Open http://localhost:5173. The API allows that origin. `http://127.0.0.1:5173` is a different origin and directory requests will fail.
+Open http://localhost:5173. The API allows that origin. `http://127.0.0.1:5173` is a different origin, and directory requests will fail if you use it.
 
 Check the production build:
 
@@ -32,34 +45,15 @@ docker compose up --build
 
 The container runs `pnpm dev` and publishes port 5173. Stop it with `docker compose down`.
 
-## Project structure
+## Current Features
 
-- `src/api/` - clients for auth, directory, campaigns, collaborations, and admin
-- `src/components/` - shared UI used by the pages and the component gallery
-- `src/pages/` - routes, grouped by area
-- `src/styles/` - shared color variables
-- `src/App.tsx` - route table, including redirects from older URLs
-- `Dockerfile` and `compose.yaml` - optional container setup
-
-Dashboard pages live in `src/pages/dashboard/business`, `src/pages/dashboard/creator`, and `src/pages/dashboard/shared`.
-
-## What the app does
-
-Public pages:
-
-- Landing page at `/`
-- Business and creator directory at `/discover`, with search and county filters
-- Business profiles at `/businesses/:id` and creator profiles at `/creators/:id`
-- Open campaign list at `/campaigns`
+- Landing page
+- Business and creator directory, with search and county filters
+- Public business and creator profiles
+- Open campaign list
 - Login, logout, and signup
+- Business dashboard for the overview, campaigns, creating or editing a campaign, deliverable review, and account
+- Creator dashboard for the overview, open campaigns, deliverable submission, and account
+- Admin dashboard
 
-Signed-in business pages cover the overview, campaigns, deliverable review, account, and campaign create or edit. Creator pages cover the overview, open campaigns, deliverable submission, and account. Administrators use `/dashboard/admin`.
-
-Older links such as `/app/...`, `/components`, and dashboard hash sections redirect to the current routes.
-
-## Limitations
-
-- Messages, payments, and profile editing under `/dev` are placeholders.
-- `/dev/components` previews shared components with sample data. It does not call the API.
-- The directory and profiles are read-only. Signup creates an account, and the account pages show the saved profile.
-- There is no public campaign detail page. Open campaigns are listed, and a signed-in business edits its own campaigns.
+Messages, payments, and profile editing under `/dev` are still placeholders. `/dev/components` previews shared components with sample data. The directory and profiles are read-only. Signup creates an account, and the account pages show the saved profile. There is no public campaign detail page. A signed-in business edits its own campaigns.
