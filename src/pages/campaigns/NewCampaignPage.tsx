@@ -11,7 +11,7 @@ import {
   watchSession,
   type Session,
 } from "../auth/session";
-import { readRememberedBusiness, rememberBusiness } from "../dashboard/selectedBusiness";
+import { readRememberedBusiness, rememberBusiness } from "../dashboard/shared/selectedBusiness";
 import { getCounties, type County } from "../../api/directory";
 import {
   CampaignApiError,

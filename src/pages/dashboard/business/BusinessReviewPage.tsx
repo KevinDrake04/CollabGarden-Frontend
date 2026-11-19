@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import {
   AppButton,
   AppNotice,
@@ -9,13 +9,13 @@ import {
   LoadingSkeleton,
   reviewBlockReason,
   toDeliverableSummary,
-} from "../../components";
-import { verifiedBusinessIds } from "../../api/auth";
+} from "../../../components";
+import { verifiedBusinessIds } from "../../../api/auth";
 import {
   BusinessSwitcher,
   useBusinessNames,
   useSelectedBusiness,
-} from "../dashboard/selectedBusiness";
+} from "../shared/selectedBusiness";
 import {
   approveDeliverable,
   collaborationErrorMessage,
@@ -23,30 +23,16 @@ import {
   upsertDeliverable,
   type CollaborationWorkspace,
   type Deliverable,
-} from "../../api/collaborations";
-import { dashboardPath, type AccountRole } from "../auth/session";
-import { clearSessionIfUnauthorized, useRoleWorkspace } from "./useRoleWorkspace";
+} from "../../../api/collaborations";
+import { dashboardPath } from "../../auth/session";
+import { clearSessionIfUnauthorized, useRoleWorkspace } from "../shared/useRoleWorkspace";
+import { linkClass, signedInAs, textLinkClass, titleClass } from "../shared/workspaceSession";
 
 type Feedback = { tone: "success" | "error"; message: string };
 type Pending = { id: number; action: "approve" | "revision" };
 
-const productionClass = "flex w-full flex-col gap-6 text-[var(--cg-text)]";
-const developmentClass = "mx-auto flex w-full max-w-3xl flex-col gap-6 text-[var(--cg-text)]";
-const linkClass =
-  "inline-flex min-h-9 items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 text-sm font-semibold text-white no-underline hover:bg-[var(--cg-primary-dark)]";
-const textLink = "text-sm font-semibold text-[var(--cg-primary-dark)] no-underline";
+const pageClass = "flex w-full flex-col gap-6 text-[var(--cg-text)]";
 const headingClass = "text-xl font-semibold text-[var(--cg-primary-dark)]";
-
-function businessReviewBlock(role: CollaborationWorkspace["session"]["role"], status: string) {
-  if (role === "creator") return "Review actions are available to business accounts.";
-  return reviewBlockReason(status);
-}
-
-function roleLabel(role: AccountRole) {
-  if (role === "business") return "business";
-  if (role === "creator") return "creator";
-  return "administrator";
-}
 
 function LoadingBlock({ label }: { label: string }) {
   return (
@@ -59,32 +45,21 @@ function LoadingBlock({ label }: { label: string }) {
 }
 
 export default function BusinessReviewPage() {
-  const { pathname } = useLocation();
-  const production = pathname.startsWith("/dashboard/");
-  const returnPath = production ? "/dashboard/business/review" : "/dev/collaborations/business";
-  const { view, workspace, reload, updateAccess } = useRoleWorkspace("business", production);
+  const returnPath = "/dashboard/business/review";
+  const { view, workspace, reload, updateAccess } = useRoleWorkspace("business");
 
   return (
-    <div className={production ? productionClass : developmentClass}>
+    <div className={pageClass}>
       <div className="max-w-2xl">
-        {production ? (
-          <Link to="/dashboard/business" className={textLink}>
-            Overview
-          </Link>
-        ) : (
-          <p className="eyebrow">Development</p>
-        )}
-        <h1 className={production ? "mt-3 text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)] md:text-4xl" : undefined}>
-          {production ? "Review deliverables" : "Business review"}
+        <Link to="/dashboard/business" className={textLinkClass}>
+          Overview
+        </Link>
+        <h1 className={`mt-3 ${titleClass}`}>
+          Review deliverables
         </h1>
         <p className="mt-2 text-base text-[var(--cg-muted)]">
           Approve submitted deliverables or request a revision for this business.
         </p>
-        {production ? null : (
-          <Link to="/dev/collaborations/creator" className={`mt-2 inline-block ${textLink}`}>
-            Creator deliverables
-          </Link>
-        )}
       </div>
 
       {(view.kind === "checking" || view.kind === "loading") && (
@@ -111,7 +86,7 @@ export default function BusinessReviewPage() {
         <div className="flex flex-col items-start gap-3">
           <AppNotice
             tone="info"
-            message={`This page is for business accounts. You are signed in as ${view.role === "admin" ? "an" : "a"} ${roleLabel(view.role)} account.`}
+            message={`This page is for business accounts. You are signed in as ${signedInAs(view.role)} account.`}
           />
           <Link to={dashboardPath(view.role)} className={linkClass}>
             Go to your dashboard
@@ -129,11 +104,7 @@ export default function BusinessReviewPage() {
       )}
 
       {view.kind === "ready" && workspace && (
-        production ? (
-          <ScopedBusinessReview workspace={workspace} onAccess={updateAccess} reload={reload} />
-        ) : (
-          <BusinessWorkspace workspace={workspace} onAccess={updateAccess} reload={reload} />
-        )
+        <ScopedBusinessReview workspace={workspace} onAccess={updateAccess} reload={reload} />
       )}
     </div>
   );
@@ -168,7 +139,7 @@ function ScopedBusinessReview({
   return (
     <>
       <BusinessSwitcher ids={ids} names={names} selected={selected} onChange={choose} />
-      <BusinessWorkspace workspace={scoped} onAccess={onAccess} reload={reload} showSessionLine={false} />
+      <BusinessWorkspace workspace={scoped} onAccess={onAccess} reload={reload} />
     </>
   );
 }
@@ -177,14 +148,12 @@ function BusinessWorkspace({
   workspace,
   onAccess,
   reload,
-  showSessionLine = true,
 }: {
   workspace: CollaborationWorkspace;
   onAccess: (
     update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],
   ) => void;
   reload: () => void;
-  showSessionLine?: boolean;
 }) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [comments, setComments] = useState<Record<number, string>>({});
@@ -192,8 +161,7 @@ function BusinessWorkspace({
   const busy = useRef(false);
   const available = workspace.access.filter((entry) => !entry.error);
   const denied = workspace.access.filter((entry) => entry.error);
-  const unlinkedBusiness = workspace.session.role === "business"
-    && verifiedBusinessIds(workspace.session).length === 0;
+  const unlinkedBusiness = verifiedBusinessIds(workspace.session).length === 0;
 
   function showFeedback(next: Feedback) {
     setFeedback(next);
@@ -207,7 +175,7 @@ function BusinessWorkspace({
   }
 
   async function review(deliverable: Deliverable, action: "approve" | "revision") {
-    const blocked = businessReviewBlock(workspace.session.role, deliverable.status);
+    const blocked = reviewBlockReason(deliverable.status);
     const comment = comments[deliverable.deliverable_id] ?? "";
     if (busy.current || blocked) return;
     if (action === "revision" && !comment.trim()) return;
@@ -237,13 +205,7 @@ function BusinessWorkspace({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {showSessionLine ? (
-          <p className="text-sm text-[var(--cg-muted)]">
-            Signed in{workspace.session.email ? ` as ${workspace.session.email}` : ""}
-            {workspace.session.role ? ` (${workspace.session.role})` : ""}.
-          </p>
-        ) : <span />}
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <AppButton variant="secondary" isDisabled={pending !== null} onPress={reload}>
           Reload
         </AppButton>
@@ -379,7 +341,7 @@ function ReviewGroup({
             onCommentChange={(comment) => onComment(deliverable.deliverable_id, comment)}
             onApprove={() => onReview(deliverable, "approve")}
             onRequestRevision={() => onReview(deliverable, "revision")}
-            blockedReason={businessReviewBlock(workspace.session.role, deliverable.status)}
+            blockedReason={reviewBlockReason(deliverable.status)}
             pending={pending?.id === deliverable.deliverable_id ? pending.action : null}
             error=""
           />

@@ -6,9 +6,27 @@ import {
   readRememberedBusiness,
   resolvedBusinessId,
   businessSearch,
-} from "../dashboard/selectedBusiness";
+} from "../dashboard/shared/selectedBusiness";
 import { refreshSession, useLiveSession, type Session } from "./session";
 import { RoleSelectModal } from "./RoleSelectModal";
+
+type PageLocation = { pathname: string; search: string };
+
+function onBusinessCampaigns(location: PageLocation) {
+  return location.pathname === "/dashboard/business/campaigns"
+    || location.pathname === "/campaigns/new"
+    || /^\/campaigns\/\d+\/edit$/.test(location.pathname);
+}
+
+function onCreatorDirectory(location: PageLocation) {
+  return location.pathname.startsWith("/creators/")
+    || (location.pathname === "/discover" && new URLSearchParams(location.search).get("type") === "creator");
+}
+
+function onBusinessDirectory(location: PageLocation) {
+  return location.pathname.startsWith("/businesses/")
+    || (location.pathname === "/discover" && new URLSearchParams(location.search).get("type") !== "creator");
+}
 
 const signedOutLinks: NavItem[] = [
   { label: "Home", to: "/", end: true },
@@ -34,17 +52,12 @@ function workspaceLinks(session: Session, search: string): NavItem[] {
       {
         label: "My Campaigns",
         to: `/dashboard/business/campaigns${query}`,
-        isCurrent: (location) =>
-          location.pathname === "/dashboard/business/campaigns"
-          || location.pathname === "/campaigns/new"
-          || /^\/campaigns\/\d+\/edit$/.test(location.pathname),
+        isCurrent: onBusinessCampaigns,
       },
       {
         label: "Discover Creators",
         to: "/discover?type=creator",
-        isCurrent: (location) =>
-          location.pathname.startsWith("/creators/")
-          || (location.pathname === "/discover" && new URLSearchParams(location.search).get("type") === "creator"),
+        isCurrent: onCreatorDirectory,
       },
       { label: "Collaborations", to: `/dashboard/business/review${query}`, end: true },
       { label: "Account", to: `/dashboard/business/account${query}`, end: true },
@@ -58,9 +71,7 @@ function workspaceLinks(session: Session, search: string): NavItem[] {
       {
         label: "Discover Businesses",
         to: "/discover",
-        isCurrent: (location) =>
-          location.pathname.startsWith("/businesses/")
-          || (location.pathname === "/discover" && new URLSearchParams(location.search).get("type") !== "creator"),
+        isCurrent: onBusinessDirectory,
       },
       { label: "My Deliverables", to: "/dashboard/creator/deliverables", end: true },
       { label: "Account", to: "/dashboard/creator/account", end: true },

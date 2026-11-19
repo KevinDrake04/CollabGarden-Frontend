@@ -7,8 +7,8 @@ import {
   DashboardEmptyState,
   DeliverableStatusBadge,
   LoadingSkeleton,
-} from "../../components";
-import type { CampaignAccess } from "../../api/collaborations";
+} from "../../../components";
+import type { CampaignAccess } from "../../../api/collaborations";
 
 export function DeliverableOverview({
   status,

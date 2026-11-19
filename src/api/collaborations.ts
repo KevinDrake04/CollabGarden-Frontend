@@ -28,7 +28,7 @@ export type Deliverable = {
   attachments: Attachment[];
 };
 
-export type DeliverableWrite = {
+type DeliverableWrite = {
   title: string;
   description: string | null;
   attachments: { attachment_type: AttachmentType; url: string }[];
@@ -163,7 +163,7 @@ function parseAttachment(value: unknown): Attachment | null {
   };
 }
 
-export function parseDeliverable(value: unknown): Deliverable {
+function parseDeliverable(value: unknown): Deliverable {
   if (
     !isRecord(value) ||
     typeof value.deliverable_id !== "number" ||
@@ -385,7 +385,7 @@ export function requestRevision(
 
 const countedStatuses = ["draft", "submitted", "approved", "revision_requested"] as const;
 
-export type CountedDeliverableStatus = (typeof countedStatuses)[number];
+type CountedDeliverableStatus = (typeof countedStatuses)[number];
 
 export function deliverableStatusCounts(access: CampaignAccess[]) {
   const counts: Record<CountedDeliverableStatus, number> = {

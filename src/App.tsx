@@ -1,18 +1,7 @@
 import { type ReactNode } from "react";
-import {
-  Navigate,
-  NavLink,
-  Outlet,
-  Route,
-  Routes,
-  useLocation,
-  useParams,
-} from "react-router";
-import { Button } from "@heroui/react";
-import { Sprout } from "lucide-react";
-import ComponentGallery from "./pages/ComponentGallery";
-import CreatorDeliverablesPage from "./pages/collaborations/CreatorDeliverablesPage";
-import BusinessReviewPage from "./pages/collaborations/BusinessReviewPage";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router";
+import { DevLayout, PlaceholderPage } from "./pages/dev/DevLayout";
+import ComponentGallery from "./pages/dev/ComponentGallery";
 import "./styles/collabgarden-ui.css";
 import DirectoryPage from "./pages/directory/DirectoryPage";
 import BusinessProfilePage from "./pages/profiles/BusinessProfilePage";
@@ -24,19 +13,18 @@ import LandingPage from "./pages/landing/LandingPage";
 import CampaignListPage from "./pages/campaigns/CampaignListPage";
 import NewCampaignPage from "./pages/campaigns/NewCampaignPage";
 import EditCampaignPage from "./pages/campaigns/EditCampaignPage";
-import BusinessDashboardPage from "./pages/dashboard/BusinessDashboardPage";
-import CreatorDashboardPage from "./pages/dashboard/CreatorDashboardPage";
-import BusinessDashboard from "./pages/dashboard/BusinessDashboard";
-import BusinessCampaignsPage from "./pages/dashboard/BusinessCampaignsPage";
-import BusinessAccountPage from "./pages/dashboard/BusinessAccountPage";
-import CreatorDashboard from "./pages/dashboard/CreatorDashboard";
-import CreatorOpportunitiesPage from "./pages/dashboard/CreatorOpportunitiesPage";
-import CreatorAccountPage from "./pages/dashboard/CreatorAccountPage";
+import BusinessDashboard from "./pages/dashboard/business/BusinessDashboard";
+import BusinessCampaignsPage from "./pages/dashboard/business/BusinessCampaignsPage";
+import BusinessAccountPage from "./pages/dashboard/business/BusinessAccountPage";
+import BusinessReviewPage from "./pages/dashboard/business/BusinessReviewPage";
+import CreatorDashboard from "./pages/dashboard/creator/CreatorDashboard";
+import CreatorOpportunitiesPage from "./pages/dashboard/creator/CreatorOpportunitiesPage";
+import CreatorAccountPage from "./pages/dashboard/creator/CreatorAccountPage";
+import CreatorDeliverablesPage from "./pages/dashboard/creator/CreatorDeliverablesPage";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
-import AdminPrototypePage from "./pages/admin/AdminPrototypePage";
 import NotFoundPage from "./pages/NotFoundPage";
+import { dashboardPath, readSession } from "./pages/auth/session";
 
-// Shared public header. The dashboard shell adds a page width around the outlet.
 function SiteFrame({
   className,
   mainClassName,
@@ -54,7 +42,6 @@ function SiteFrame({
   );
 }
 
-// Public website. No development sidebar.
 function PublicLayout() {
   const { pathname } = useLocation();
   const landing = pathname === "/";
@@ -69,7 +56,6 @@ function PublicLayout() {
   );
 }
 
-// User-facing dashboards. The shared header adds Dashboard for the signed-in role.
 function DashboardShell() {
   return (
     <SiteFrame
@@ -83,112 +69,20 @@ function DashboardShell() {
   );
 }
 
-// Temporary development navigation.
-const devSections = [
-  {
-    title: "Website",
-    links: [
-      ["Public website", "/"],
-      ["Campaigns", "/campaigns"],
-      ["New campaign", "/campaigns/new"],
-    ],
-  },
-  {
-    title: "Development",
-    links: [
-      ["Home", "/dev"],
-      ["Components", "/dev/components"],
-      ["Creator deliverables", "/dev/collaborations/creator"],
-      ["Business review", "/dev/collaborations/business"],
-      ["Dashboard", "/dev/app/dashboard"],
-      ["Business dashboard", "/dev/dashboard/business"],
-      ["Creator dashboard", "/dev/dashboard/creator"],
-      ["Business page", "/dashboard/business"],
-      ["Creator page", "/dashboard/creator"],
-      ["Admin prototype", "/dev/dashboard/admin"],
-      ["Admin dashboard", "/dashboard/admin"],
-      ["Campaigns", "/dev/app/campaigns"],
-      ["Campaign workspace", "/dev/app/campaigns/demo"],
-      ["Opportunities", "/dev/app/opportunities"],
-      ["Messages", "/dev/app/messages"],
-      ["Payments", "/dev/app/payments"],
-      ["Profile", "/dev/app/profile"],
-    ],
-  },
-] as const;
-
-function DevLayout() {
-  return (
-    <>
-      <header>
-        <strong>CollabGarden</strong>
-        <span>Development</span>
-      </header>
-
-      <div className="shell">
-        <nav aria-label="Development">
-          {devSections.map((section) => (
-            <div key={section.title}>
-              <h2>{section.title}</h2>
-
-              {section.links.map(([label, url]) => (
-                <NavLink
-                  key={url}
-                  end
-                  to={url}
-                  className={({ isActive }) => (isActive ? "active" : "")}
-                >
-                  {label}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
-
-        <main>
-          <Outlet />
-        </main>
-      </div>
-    </>
-  );
+function withLocation(to: string, search: string, hash: string) {
+  return `${to}${search}${hash}`;
 }
 
-// Generic placeholder page.
-function Page({ title, note }: { title: string; note?: string }) {
-  return (
-    <>
-      <p className="eyebrow">Temporary page</p>
-
-      <h1>{title}</h1>
-
-      <p>{note ?? "Page layout and functionality will be added later."}</p>
-
-      {/* Temporary component library and icon test */}
-      {title === "Landing" && (
-        <div className="mt-6 flex items-center gap-4">
-          <Button
-            variant="primary"
-            onPress={() => window.alert("HeroUI and Lucide are working!")}
-          >
-            <Sprout size={18} />
-            Test CollabGarden
-          </Button>
-        </div>
-      )}
-    </>
-  );
+function SearchRedirect({ to }: { to: string }) {
+  const { search, hash } = useLocation();
+  return <Navigate to={withLocation(to, search, hash)} replace />;
 }
 
-// Temporary campaign workspace route.
-function CampaignWorkspace() {
-  const { campaignId } = useParams();
-
-  return (
-    <Page
-      title="Campaign Workspace"
-      note={`Campaign ID: ${campaignId}. Business/creator views will be defined later.`}
-    />
-  );
+function DashboardRedirect() {
+  const { search, hash } = useLocation();
+  const session = readSession();
+  const to = session ? dashboardPath(session.role) : "/login";
+  return <Navigate to={withLocation(to, search, hash)} replace />;
 }
 
 // Old in-page section links, such as /dashboard/business#campaigns.
@@ -205,46 +99,40 @@ function HashRedirect({
   return <Navigate to={`${next}${search}`} replace />;
 }
 
-// Old /app links now live under /dev/app.
+// Old /app links. Retired sections go to the live page. The rest stay under /dev.
 function LegacyAppRedirect() {
   const { pathname, search, hash } = useLocation();
-
-  return <Navigate to={`/dev${pathname}${search}${hash}`} replace />;
+  if (pathname === "/app/dashboard") return <DashboardRedirect />;
+  if (pathname === "/app/campaigns" || pathname.startsWith("/app/campaigns/")) {
+    return <Navigate to={withLocation("/campaigns", search, hash)} replace />;
+  }
+  if (pathname === "/app/opportunities") {
+    return <Navigate to={withLocation("/dashboard/creator/opportunities", search, hash)} replace />;
+  }
+  return <Navigate to={withLocation(`/dev${pathname}`, search, hash)} replace />;
 }
 
-// Application routes.
 export default function App() {
   return (
     <Routes>
       <Route path="dashboard/admin" element={<AdminDashboardPage />} />
       <Route path="dashboard/admin/:section" element={<AdminDashboardPage />} />
 
-      {/* Public website */}
       <Route element={<PublicLayout />}>
         <Route index element={<LandingPage />} />
-
         <Route path="discover" element={<DirectoryPage />} />
-
         <Route path="businesses/:id" element={<BusinessProfilePage />} />
-
         <Route path="creators/:id" element={<CreatorProfilePage />} />
-
         <Route path="campaigns" element={<CampaignListPage />} />
-
         <Route path="campaigns/new" element={<NewCampaignPage />} />
-
         <Route path="campaigns/:campaignId/edit" element={<EditCampaignPage />} />
-
         <Route path="login" element={<LoginPage />} />
-
         <Route path="logout" element={<LogoutPage />} />
-
         <Route path="signup" element={<SignupPage />} />
-
+        {/* Static routes such as /dashboard and /dev rank above this catch-all. */}
         <Route path="*" element={<NotFoundPage />} />
       </Route>
 
-      {/* User-facing dashboards. Development previews stay under /dev/dashboard. */}
       <Route element={<DashboardShell />}>
         <Route
           path="dashboard/business"
@@ -283,70 +171,34 @@ export default function App() {
         <Route path="dashboard/creator/account" element={<CreatorAccountPage />} />
       </Route>
 
-      {/* Development workspace */}
+      <Route path="dev/dashboard/business" element={<SearchRedirect to="/dashboard/business" />} />
+      <Route path="dev/dashboard/creator" element={<SearchRedirect to="/dashboard/creator" />} />
+      <Route path="dev/dashboard/admin" element={<SearchRedirect to="/dashboard/admin" />} />
+      <Route path="dev/collaborations/creator" element={<SearchRedirect to="/dashboard/creator/deliverables" />} />
+      <Route path="dev/collaborations/business" element={<SearchRedirect to="/dashboard/business/review" />} />
+      <Route path="dev/app/dashboard" element={<DashboardRedirect />} />
+      <Route path="dev/app/campaigns" element={<SearchRedirect to="/campaigns" />} />
+      <Route path="dev/app/campaigns/:campaignId" element={<SearchRedirect to="/campaigns" />} />
+      <Route path="dev/app/opportunities" element={<SearchRedirect to="/dashboard/creator/opportunities" />} />
+
       <Route path="dev" element={<DevLayout />}>
         <Route
           index
           element={
-            <Page
+            <PlaceholderPage
               title="Development"
               note="Temporary workspace for routing checks and the component gallery."
             />
           }
         />
-
         <Route path="components" element={<ComponentGallery />} />
-
-        <Route path="dashboard/business" element={<BusinessDashboardPage />} />
-
-        <Route path="dashboard/creator" element={<CreatorDashboardPage />} />
-
-        <Route path="collaborations/creator" element={<CreatorDeliverablesPage />} />
-
-        <Route path="collaborations/business" element={<BusinessReviewPage />} />
-
-        <Route path="dashboard/admin" element={<AdminPrototypePage />} />
-
-        <Route
-          path="app/dashboard"
-          element={
-            <Page
-              title="Dashboard"
-              note="Business and creator versions will be added after role handling is planned."
-            />
-          }
-        />
-
-        <Route path="app/campaigns" element={<Page title="Campaigns" />} />
-
-        <Route
-          path="app/campaigns/:campaignId"
-          element={<CampaignWorkspace />}
-        />
-
-        <Route
-          path="app/opportunities"
-          element={<Page title="Opportunities" />}
-        />
-
-        <Route path="app/messages" element={<Page title="Messages" />} />
-
-        <Route
-          path="app/payments"
-          element={<Page title="Payments / Earnings" />}
-        />
-
-        <Route path="app/profile" element={<Page title="Profile" />} />
-
-        <Route path="*" element={<Page title="404 — Page Not Found" />} />
+        <Route path="app/messages" element={<PlaceholderPage title="Messages" />} />
+        <Route path="app/payments" element={<PlaceholderPage title="Payments / Earnings" />} />
+        <Route path="app/profile" element={<PlaceholderPage title="Profile" />} />
+        <Route path="*" element={<PlaceholderPage title="404 — Page Not Found" />} />
       </Route>
 
-      {/* Old development links */}
-      <Route
-        path="components"
-        element={<Navigate to="/dev/components" replace />}
-      />
-
+      <Route path="components" element={<Navigate to="/dev/components" replace />} />
       <Route path="app/*" element={<LegacyAppRedirect />} />
     </Routes>
   );

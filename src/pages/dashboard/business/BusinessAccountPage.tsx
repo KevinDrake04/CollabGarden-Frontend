@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { AppAvatar, AppNotice } from "../../components";
-import { verifiedBusinessIds } from "../../api/auth";
-import { getBusiness, getCounties, type Business, type County } from "../../api/directory";
-import { countyLabel } from "./businessFormat";
-import { BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "./selectedBusiness";
+import { AppAvatar, AppNotice } from "../../../components";
+import { verifiedBusinessIds } from "../../../api/auth";
+import { getBusiness, getCounties, type Business, type County } from "../../../api/directory";
+import { countyLabel } from "../shared/campaignLabels";
+import { BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "../shared/selectedBusiness";
 import {
   AccountCheck,
   AccountField,
@@ -12,7 +12,7 @@ import {
   titleClass,
   useWorkspaceSession,
   WorkspaceAccess,
-} from "./workspaceSession";
+} from "../shared/workspaceSession";
 
 const panelClass = "max-w-2xl rounded-2xl border border-[var(--cg-border)] bg-white p-6 shadow-sm";
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 import { AppButton, AppNotice, LoadingSkeleton } from "../../components";
 import { AuthError, verifiedBusinessIds } from "../../api/auth";
 import {
@@ -10,6 +10,7 @@ import {
   type Session,
 } from "../auth/session";
 import { getCounties, type County } from "../../api/directory";
+import { businessSearch } from "../dashboard/shared/selectedBusiness";
 import {
   CampaignApiError,
   getBusinesses,
@@ -140,6 +141,7 @@ async function loadBusinessName(businessId: number, signal: AbortSignal) {
 
 export default function EditCampaignPage() {
   useExpiredSessionRedirect();
+  const { search } = useLocation();
   const params = useParams();
   const campaignId = Number(params.campaignId);
   const idIsValid = Number.isInteger(campaignId) && campaignId > 0;
@@ -319,6 +321,9 @@ export default function EditCampaignPage() {
   }
 
   const published = ready?.campaign.status === "open";
+  const campaignsTo = `/dashboard/business/campaigns${
+    search || businessSearch(ready?.campaign.business_id ?? null)
+  }`;
   const banner = (
     <div className="space-y-3">
       {apiError && (
@@ -342,7 +347,7 @@ export default function EditCampaignPage() {
     <div className="-m-12 min-h-[calc(100dvh-4.5rem)] bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-my-8">
       <div className="mx-auto w-full min-w-0 max-w-3xl px-4 py-10 text-[var(--cg-text)] md:px-8 md:py-14">
         <Link
-          to="/dashboard/business#campaigns"
+          to={campaignsTo}
           className="text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
         >
           My Campaigns

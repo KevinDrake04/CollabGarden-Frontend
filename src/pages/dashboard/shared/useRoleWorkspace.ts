@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { AuthError, type AccountRole, type Session } from "../../api/auth";
+import { AuthError, type AccountRole, type Session } from "../../../api/auth";
 import {
   CollaborationApiError,
   collaborationErrorMessage,
   isAbortError,
   loadCollaborationWorkspace,
   type CollaborationWorkspace,
-} from "../../api/collaborations";
+} from "../../../api/collaborations";
 import {
   expireSession,
   readSession,
@@ -14,9 +14,9 @@ import {
   refreshSession,
   useExpiredSessionRedirect,
   watchSession,
-} from "../auth/session";
+} from "../../auth/session";
 
-export type RoleWorkspaceView =
+type RoleWorkspaceView =
   | { kind: "checking" }
   | { kind: "signed-out"; expired: boolean }
   | { kind: "wrong-role"; role: AccountRole }
@@ -39,9 +39,8 @@ function failureMessage(error: unknown) {
   return collaborationErrorMessage(error);
 }
 
-// Refresh the stored session, then load deliverables for the signed-in account.
-// Production pages pass enforceRole so the wrong account never reaches the workspace.
-export function useRoleWorkspace(expectedRole: "creator" | "business", enforceRole: boolean) {
+// Refresh the stored session, then load deliverables for this role.
+export function useRoleWorkspace(expectedRole: "creator" | "business") {
   useExpiredSessionRedirect();
   const [retry, setRetry] = useState(0);
   const [session, setSession] = useState<Session | null>(() => readSession());
@@ -86,7 +85,7 @@ export function useRoleWorkspace(expectedRole: "creator" | "business", enforceRo
           setView({ kind: "signed-out", expired: true });
           return;
         }
-        if (enforceRole && next.role !== expectedRole) {
+        if (next.role !== expectedRole) {
           setWorkspace(null);
           setView({ kind: "wrong-role", role: next.role });
           return;
@@ -115,7 +114,7 @@ export function useRoleWorkspace(expectedRole: "creator" | "business", enforceRo
       ignore = true;
       controller.abort();
     };
-  }, [expectedRole, enforceRole, retry]);
+  }, [expectedRole, retry]);
 
   function updateAccess(
     update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],

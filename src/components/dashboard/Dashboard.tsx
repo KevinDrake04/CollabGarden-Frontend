@@ -54,6 +54,11 @@ export function DashboardStatCard({
   value,
   icon,
 }: DashboardStatCardProps) {
+  const compactValue = typeof value === "number" || String(value).length <= 4;
+  const valueClass = compactValue
+    ? "text-2xl font-bold text-[var(--cg-text)]"
+    : "text-lg font-semibold text-[var(--cg-text)]";
+
   return (
     <Card className={`${cardClass} flex flex-row items-center gap-3`}>
       {icon && (
@@ -63,12 +68,7 @@ export function DashboardStatCard({
       )}
       <div className="min-w-0">
         <div className="text-sm text-[var(--cg-muted)]">{label}</div>
-        <div className={typeof value === "number" || String(value).length <= 4
-          ? "text-2xl font-bold text-[var(--cg-text)]"
-          : "text-lg font-semibold text-[var(--cg-text)]"}
-        >
-          {value}
-        </div>
+        <div className={valueClass}>{value}</div>
       </div>
     </Card>
   );

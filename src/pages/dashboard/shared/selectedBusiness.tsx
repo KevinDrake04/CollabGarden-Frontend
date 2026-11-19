@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
-import { AppSelect } from "../../components";
-import { getBusinesses } from "../../api/campaigns";
+import { AppSelect } from "../../../components";
+import { getBusinesses } from "../../../api/campaigns";
 
 const selectionKey = "collabgarden.selectedBusiness";
 

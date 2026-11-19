@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { type ReactNode } from "react";
 import { Link } from "react-router";
-import { AppButton, AppNotice } from "../../components";
-import { AuthError } from "../../api/auth";
+import { AppButton, AppNotice } from "../../../components";
+import { AuthError } from "../../../api/auth";
 import {
   dashboardPath,
   expireSession,
@@ -12,7 +12,7 @@ import {
   useExpiredSessionRedirect,
   watchSession,
   type Session,
-} from "../auth/session";
+} from "../../auth/session";
 
 export const titleClass =
   "text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)] md:text-4xl";
@@ -25,10 +25,9 @@ function isAbort(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
 }
 
-function roleName(role: Session["role"]) {
-  if (role === "business") return "business";
-  if (role === "creator") return "creator";
-  return "administrator";
+export function signedInAs(role: Session["role"]) {
+  if (role === "admin") return "an administrator";
+  return `a ${role}`;
 }
 
 export function useWorkspaceSession() {
@@ -144,7 +143,7 @@ export function WorkspaceAccess({
         <h1 className={titleClass}>{title}</h1>
         <AppNotice
           tone="info"
-          message={`This page is for ${role} accounts. You are signed in as ${session.role === "admin" ? "an" : "a"} ${roleName(session.role)} account.`}
+          message={`This page is for ${role} accounts. You are signed in as ${signedInAs(session.role)} account.`}
         />
         <Link to={dashboardPath(session.role)} className={linkClass}>Go to your dashboard</Link>
       </div>

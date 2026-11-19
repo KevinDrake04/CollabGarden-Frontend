@@ -2,17 +2,17 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { AppButton, AppInput, AppSelect, AppTextarea } from "../../components";
 
-export const deliverableTypeOptions = [
+const deliverableTypeOptions = [
   { value: "post", label: "Post" },
   { value: "story", label: "Story" },
   { value: "reel", label: "Reel" },
 ] as const;
 
-export type DeliverableType = (typeof deliverableTypeOptions)[number]["value"];
+type DeliverableType = (typeof deliverableTypeOptions)[number]["value"];
 
 const deliverableTypeValues = new Set<string>(deliverableTypeOptions.map((option) => option.value));
 
-export type DeliverableRequirementDraft = {
+type DeliverableRequirementDraft = {
   key: string;
   deliverableType: string;
   quantity: string;
@@ -28,7 +28,7 @@ export type CampaignFormValues = {
   offerType: string;
 };
 
-export type RequirementRowErrors = {
+type RequirementRowErrors = {
   deliverableType?: string;
   quantity?: string;
 };
@@ -46,17 +46,17 @@ export type CampaignFormErrors = {
 
 let nextRequirementKey = 1;
 
-export function blankRequirement(): DeliverableRequirementDraft {
+function blankRequirement(): DeliverableRequirementDraft {
   const key = `requirement-${nextRequirementKey}`;
   nextRequirementKey += 1;
   return { key, deliverableType: "", quantity: "" };
 }
 
-export function isDeliverableType(value: string): value is DeliverableType {
+function isDeliverableType(value: string): value is DeliverableType {
   return deliverableTypeValues.has(value);
 }
 
-export function parseQuantity(value: string) {
+function parseQuantity(value: string) {
   const trimmed = value.trim();
   if (!/^\d+$/.test(trimmed)) return null;
   const quantity = Number(trimmed);
@@ -104,7 +104,7 @@ export function hasCampaignErrors(errors: CampaignFormErrors) {
   return Object.values(errors.requirementRows ?? {}).some((row) => row.deliverableType || row.quantity);
 }
 
-export type CampaignCounty = {
+type CampaignCounty = {
   county_id: number;
   name: string;
 };

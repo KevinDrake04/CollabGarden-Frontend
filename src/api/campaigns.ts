@@ -268,7 +268,7 @@ export function getBusinesses(signal: AbortSignal) {
   return request<BusinessSummary[]>("/api/v1/businesses", { signal });
 }
 
-export function createCampaign(
+function createCampaign(
   input: CampaignInput,
   businessId: number,
   token: string,
@@ -282,7 +282,7 @@ export function createCampaign(
   });
 }
 
-export function updateCampaign(
+function updateCampaign(
   campaignId: number,
   input: Partial<CampaignInput> & { status?: CampaignStatus },
   token: string,
@@ -300,7 +300,7 @@ export function updateCampaign(
 export async function saveExistingCampaign(options: {
   campaignId: number;
   input: CampaignInput;
-  target: Extract<CampaignStatus, "draft" | "open">;
+  target: "draft" | "open";
   token: string;
   includeRequirements: boolean;
   signal?: AbortSignal;
@@ -340,7 +340,7 @@ export async function saveExistingCampaign(options: {
 // the create body, and on later drafts, until the campaign is open.
 export async function submitCampaign(options: {
   input: CampaignInput;
-  target: Extract<CampaignStatus, "draft" | "open">;
+  target: "draft" | "open";
   token: string | null;
   businessId: number | null;
   campaignId: number | null;

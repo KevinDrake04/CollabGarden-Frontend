@@ -7,27 +7,27 @@ import {
   DashboardEmptyState,
   DashboardStatCard,
   LoadingSkeleton,
-} from "../../components";
+} from "../../../components";
 import {
   CollaborationApiError,
   collaborationErrorMessage,
   deliverableStatusCounts,
   loadCollaborationWorkspace,
   type CampaignAccess,
-} from "../../api/collaborations";
-import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../api/campaigns";
-import { getCounties, type County } from "../../api/directory";
-import { expireSession } from "../auth/session";
-import { DeliverableOverview } from "./DeliverableOverview";
+} from "../../../api/collaborations";
+import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../../api/campaigns";
+import { getCounties, type County } from "../../../api/directory";
+import { expireSession } from "../../auth/session";
+import { DeliverableOverview } from "../shared/DeliverableOverview";
 import { OpportunityList } from "./CreatorOpportunitiesPage";
-import { useCreatorGreeting } from "./CreatorAccountPage";
+import { useCreatorGreeting } from "./useCreatorGreeting";
 import {
   AccountCheck,
   textLinkClass,
   titleClass,
   useWorkspaceSession,
   WorkspaceAccess,
-} from "./workspaceSession";
+} from "../shared/workspaceSession";
 
 type OpportunityLoad =
   | { status: "idle" | "loading" }
@@ -127,6 +127,9 @@ export default function CreatorDashboard() {
   const displayName = greeting.displayName || session.email;
   const openCount = opportunities.status === "ready" ? opportunities.campaigns.length : null;
   const deliverableCounts = deliverables.status === "ready" ? deliverableStatusCounts(deliverables.access) : null;
+  let deliverableStatus: "loading" | "error" | "ready" = "loading";
+  if (deliverables.status === "error") deliverableStatus = "error";
+  if (deliverables.status === "ready") deliverableStatus = "ready";
 
   return (
     <div className="flex flex-col gap-8">
@@ -197,13 +200,7 @@ export default function CreatorDashboard() {
           <section className="flex flex-col gap-4">
             <h2 className="text-xl font-semibold text-[var(--cg-primary-dark)]">My Deliverables</h2>
             <DeliverableOverview
-              status={
-                deliverables.status === "ready"
-                  ? "ready"
-                  : deliverables.status === "error"
-                    ? "error"
-                    : "loading"
-              }
+              status={deliverableStatus}
               access={deliverables.status === "ready" ? deliverables.access : []}
               message={deliverables.status === "error" ? deliverables.message : ""}
               onRetry={() => setDeliverableAttempt((value) => value + 1)}

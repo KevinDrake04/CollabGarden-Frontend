@@ -1,42 +1,65 @@
 # CollabGarden Frontend
 
-Frontend for CollabGarden using React, TypeScript, Vite, HeroUI, Lucide, and Tailwind CSS.
+React frontend for CollabGarden. It uses TypeScript, Vite, HeroUI, Lucide, and Tailwind CSS.
 
-## Getting Started
+## Setup
 
-Make sure Docker Desktop is running.
+Use Node.js 22. Dependencies are locked with pnpm.
 
-Start the app:
+```bash
+pnpm install
+```
+
+Copy `.env.example` to `.env.local` and set `VITE_API_URL` to the backend origin.
+
+```bash
+pnpm dev
+```
+
+Open http://localhost:5173. The API allows that origin. `http://127.0.0.1:5173` is a different origin and directory requests will fail.
+
+Check the production build:
+
+```bash
+pnpm build
+```
+
+Docker is optional. With Docker Desktop running:
 
 ```bash
 docker compose up --build
 ```
 
-Open http://localhost:5173
+The container runs `pnpm dev` and publishes port 5173. Stop it with `docker compose down`.
 
-Stop the app "Hi":
+## Project structure
 
-```bash
-docker compose down
-```
+- `src/api/` - clients for auth, directory, campaigns, collaborations, and admin
+- `src/components/` - shared UI used by the pages and the component gallery
+- `src/pages/` - routes, grouped by area
+- `src/styles/` - shared color variables
+- `src/App.tsx` - route table, including redirects from older URLs
+- `Dockerfile` and `compose.yaml` - optional container setup
 
-## Project Structure
+Dashboard pages live in `src/pages/dashboard/business`, `src/pages/dashboard/creator`, and `src/pages/dashboard/shared`.
 
-- `src/components/` — Reusable UI components
-- `src/pages/` — Application pages
-- `src/styles/` — Shared colors
-- `src/App.tsx` — Routing
-- `Dockerfile` — Docker setup
-- `compose.yaml` — Container configuration
+## What the app does
 
-## Development
+Public pages:
 
-View components at http://localhost:5173/components
+- Landing page at `/`
+- Business and creator directory at `/discover`, with search and county filters
+- Business profiles at `/businesses/:id` and creator profiles at `/creators/:id`
+- Open campaign list at `/campaigns`
+- Login, logout, and signup
 
-Check the build:
+Signed-in business pages cover the overview, campaigns, deliverable review, account, and campaign create or edit. Creator pages cover the overview, open campaigns, deliverable submission, and account. Administrators use `/dashboard/admin`.
 
-```bash
-docker compose exec frontend pnpm build
-```
+Older links such as `/app/...`, `/components`, and dashboard hash sections redirect to the current routes.
 
-Pages are currently placeholders. Development will follow the Figma designs.
+## Limitations
+
+- Messages, payments, and profile editing under `/dev` are placeholders.
+- `/dev/components` previews shared components with sample data. It does not call the API.
+- The directory and profiles are read-only. Signup creates an account, and the account pages show the saved profile.
+- There is no public campaign detail page. Open campaigns are listed, and a signed-in business edits its own campaigns.

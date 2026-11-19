@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { AppAvatar } from "../../components";
-import { AuthError, fetchAccount, type AccountProfile } from "../../api/auth";
-import { countyNameForId, getCounties, getCreator, type County, type Creator } from "../../api/directory";
-import { expireSession, type Session } from "../auth/session";
+import { AppAvatar } from "../../../components";
+import { AuthError, fetchAccount, type AccountProfile } from "../../../api/auth";
+import { countyNameForId, getCounties, getCreator, type County, type Creator } from "../../../api/directory";
+import { expireSession } from "../../auth/session";
 import {
   AccountCheck,
   AccountField,
@@ -11,7 +11,7 @@ import {
   titleClass,
   useWorkspaceSession,
   WorkspaceAccess,
-} from "./workspaceSession";
+} from "../shared/workspaceSession";
 
 const panelClass = "max-w-2xl rounded-2xl border border-[var(--cg-border)] bg-white p-6 shadow-sm";
 
@@ -27,47 +27,6 @@ type ProfileLoad = {
 };
 
 const emptyProfile: ProfileLoad = { account: null, creator: null, missing: false, counties: [] };
-
-export function useCreatorGreeting(session: Session | null) {
-  const [displayName, setDisplayName] = useState("");
-  const [bio, setBio] = useState("");
-
-  useEffect(() => {
-    if (!session) {
-      setDisplayName("");
-      setBio("");
-      return;
-    }
-    const controller = new AbortController();
-    fetchAccount(session.accessToken, controller.signal)
-      .then(async (account) => {
-        if (controller.signal.aborted) return;
-        const fallback = account.displayName || session.email;
-        if (account.creatorId == null) {
-          setDisplayName(fallback);
-          setBio("");
-          return;
-        }
-        try {
-          const creator = await getCreator(account.creatorId, controller.signal);
-          if (controller.signal.aborted) return;
-          setDisplayName(creator.creator_id === account.creatorId ? creator.display_name.trim() || fallback : fallback);
-          setBio(creator.creator_id === account.creatorId ? creator.bio?.trim() || "" : "");
-        } catch (error) {
-          if (controller.signal.aborted || isAbort(error)) return;
-          setDisplayName(fallback);
-          setBio("");
-        }
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbort(error)) return;
-        if (error instanceof AuthError && error.status === 401) expireSession();
-      });
-    return () => controller.abort();
-  }, [session]);
-
-  return { displayName, bio };
-}
 
 export default function CreatorAccountPage() {
   const { session, accountState, accountError, retry } = useWorkspaceSession();

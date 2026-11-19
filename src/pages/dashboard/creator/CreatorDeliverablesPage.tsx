@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import { Chip, Modal } from "@heroui/react";
 import { X } from "lucide-react";
 import {
@@ -15,7 +15,7 @@ import {
   toDeliverableSummary,
   type DeliverableFormValues,
   type DeliverableInput,
-} from "../../components";
+} from "../../../components";
 import {
   collaborationErrorMessage,
   createDeliverable,
@@ -23,40 +23,16 @@ import {
   upsertDeliverable,
   type CollaborationWorkspace,
   type Deliverable,
-} from "../../api/collaborations";
-import { dashboardPath, type AccountRole } from "../auth/session";
-import { clearSessionIfUnauthorized, useRoleWorkspace } from "./useRoleWorkspace";
+} from "../../../api/collaborations";
+import { dashboardPath } from "../../auth/session";
+import { clearSessionIfUnauthorized, useRoleWorkspace } from "../shared/useRoleWorkspace";
+import { linkClass, signedInAs, textLinkClass, titleClass } from "../shared/workspaceSession";
 
 type Feedback = { tone: "success" | "error"; message: string };
 type Pending = { action: "draft" | "submit"; id?: number };
 
-const productionClass = "flex w-full flex-col gap-6 text-[var(--cg-text)]";
-const developmentClass = "mx-auto flex w-full max-w-3xl flex-col gap-6 text-[var(--cg-text)]";
-const linkClass =
-  "inline-flex min-h-9 items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 text-sm font-semibold text-white no-underline hover:bg-[var(--cg-primary-dark)]";
-const textLink = "text-sm font-semibold text-[var(--cg-primary-dark)] no-underline";
+const pageClass = "flex w-full flex-col gap-6 text-[var(--cg-text)]";
 const headingClass = "text-xl font-semibold text-[var(--cg-primary-dark)]";
-
-function createBlockReason(role: CollaborationWorkspace["session"]["role"], available: number) {
-  if (role === "business") {
-    return "This session is a business account. Use Business review to approve or request a revision.";
-  }
-  if (available === 0) return "Add a deliverable once a campaign is available.";
-  return "";
-}
-
-function submitBlockReason(role: CollaborationWorkspace["session"]["role"], status: string) {
-  if (role === "business") {
-    return "This session is a business account. Use Business review to approve or request a revision.";
-  }
-  return draftSubmitBlockReason(status);
-}
-
-function roleLabel(role: AccountRole) {
-  if (role === "creator") return "creator";
-  if (role === "business") return "business";
-  return "administrator";
-}
 
 function LoadingBlock({ label }: { label: string }) {
   return (
@@ -69,32 +45,21 @@ function LoadingBlock({ label }: { label: string }) {
 }
 
 export default function CreatorDeliverablesPage() {
-  const { pathname } = useLocation();
-  const production = pathname.startsWith("/dashboard/");
-  const returnPath = production ? "/dashboard/creator/deliverables" : "/dev/collaborations/creator";
-  const { view, workspace, reload, updateAccess } = useRoleWorkspace("creator", production);
+  const returnPath = "/dashboard/creator/deliverables";
+  const { view, workspace, reload, updateAccess } = useRoleWorkspace("creator");
 
   return (
-    <div className={production ? productionClass : developmentClass}>
+    <div className={pageClass}>
       <div className="max-w-2xl">
-        {production ? (
-          <Link to="/dashboard/creator" className={textLink}>
-            Overview
-          </Link>
-        ) : (
-          <p className="eyebrow">Development</p>
-        )}
-        <h1 className={production ? "mt-3 text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)] md:text-4xl" : undefined}>
-          {production ? "Deliverables" : "Creator deliverables"}
+        <Link to="/dashboard/creator" className={textLinkClass}>
+          Overview
+        </Link>
+        <h1 className={`mt-3 ${titleClass}`}>
+          Deliverables
         </h1>
         <p className="mt-2 text-base text-[var(--cg-muted)]">
           Create and submit deliverables for your campaigns.
         </p>
-        {production ? null : (
-          <Link to="/dev/collaborations/business" className={`mt-2 inline-block ${textLink}`}>
-            Business review
-          </Link>
-        )}
       </div>
 
       {(view.kind === "checking" || view.kind === "loading") && (
@@ -121,7 +86,7 @@ export default function CreatorDeliverablesPage() {
         <div className="flex flex-col items-start gap-3">
           <AppNotice
             tone="info"
-            message={`This page is for creator accounts. You are signed in as ${view.role === "admin" ? "an" : "a"} ${roleLabel(view.role)} account.`}
+            message={`This page is for creator accounts. You are signed in as ${signedInAs(view.role)} account.`}
           />
           <Link to={dashboardPath(view.role)} className={linkClass}>
             Go to your dashboard
@@ -139,12 +104,7 @@ export default function CreatorDeliverablesPage() {
       )}
 
       {view.kind === "ready" && workspace && (
-        <CreatorWorkspace
-          workspace={workspace}
-          onAccess={updateAccess}
-          reload={reload}
-          showSessionLine={!production}
-        />
+        <CreatorWorkspace workspace={workspace} onAccess={updateAccess} reload={reload} />
       )}
     </div>
   );
@@ -154,14 +114,12 @@ function CreatorWorkspace({
   workspace,
   onAccess,
   reload,
-  showSessionLine = true,
 }: {
   workspace: CollaborationWorkspace;
   onAccess: (
     update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],
   ) => void;
   reload: () => void;
-  showSessionLine?: boolean;
 }) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [formError, setFormError] = useState("");
@@ -171,7 +129,9 @@ function CreatorWorkspace({
   const busy = useRef(false);
   const available = workspace.access.filter((entry) => !entry.error);
   const denied = workspace.access.filter((entry) => entry.error);
-  const addReason = createBlockReason(workspace.session.role, available.length);
+  const addReason = available.length === 0
+    ? "Add a deliverable once a campaign is available."
+    : "";
   const formPending = pending && pending.id == null ? pending.action : null;
 
   function showFeedback(next: Feedback) {
@@ -186,7 +146,7 @@ function CreatorWorkspace({
   }
 
   async function save(input: DeliverableInput, action: "draft" | "submit") {
-    if (busy.current || workspace.session.role === "business") return;
+    if (busy.current) return;
     const campaignId = Number(input.campaignId);
     if (!Number.isInteger(campaignId)) {
       setFormError("Choose a campaign.");
@@ -246,7 +206,7 @@ function CreatorWorkspace({
   }
 
   async function submitExisting(deliverable: Deliverable) {
-    if (busy.current || submitBlockReason(workspace.session.role, deliverable.status)) return;
+    if (busy.current || draftSubmitBlockReason(deliverable.status)) return;
     busy.current = true;
     setPending({ action: "submit", id: deliverable.deliverable_id });
     setFeedback(null);
@@ -275,13 +235,7 @@ function CreatorWorkspace({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {showSessionLine ? (
-          <p className="text-sm text-[var(--cg-muted)]">
-            Signed in{workspace.session.email ? ` as ${workspace.session.email}` : ""}
-            {workspace.session.role ? ` (${workspace.session.role})` : ""}.
-          </p>
-        ) : <span />}
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <AppButton variant="secondary" isDisabled={pending !== null} onPress={reload}>
           Reload
         </AppButton>
@@ -413,7 +367,7 @@ function StatusGroups({
 
   return (
     <>
-      {workspace.session.role !== "business" && workspace.access.some((entry) =>
+      {workspace.access.some((entry) =>
         !entry.error && entry.deliverables.some((item) => draftSubmitBlockReason(item.status)),
       ) && (
         <p className="text-sm text-[var(--cg-muted)]">
@@ -442,8 +396,7 @@ function StatusGroups({
               <p className="text-sm">{empty}</p>
             ) : (
               rows.map(({ deliverable, campaignName }) => {
-                const reason = submitBlockReason(workspace.session.role, deliverable.status);
-                const cardReason = reason === draftSubmitBlockReason(deliverable.status) ? "" : reason;
+                const reason = draftSubmitBlockReason(deliverable.status);
                 const submitting = pending?.action === "submit" && pending.id === deliverable.deliverable_id;
                 return (
                   <DeliverableCard
@@ -462,7 +415,6 @@ function StatusGroups({
                       >
                         {submitting ? "Submitting..." : status === "revision_requested" ? "Resubmit" : "Submit"}
                       </AppButton>
-                      {cardReason && <p className="text-sm">{cardReason}</p>}
                     </div>
                   </DeliverableCard>
                 );

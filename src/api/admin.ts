@@ -93,7 +93,7 @@ export type BusinessName = {
   name: string;
 };
 
-export function messageFromApiBody(status: number, body: unknown) {
+function messageFromApiBody(status: number, body: unknown) {
   if (body && typeof body === "object" && "detail" in body) {
     const detail = (body as { detail: unknown }).detail;
     if (typeof detail === "string" && detail.trim()) return detail.trim();

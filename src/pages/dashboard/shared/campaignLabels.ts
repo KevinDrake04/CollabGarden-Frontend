@@ -1,11 +1,11 @@
-import type { DashboardCampaignStatus } from "../../components";
-import type { County } from "../../api/directory";
+import type { DashboardCampaignStatus } from "../../../components";
+import type { County } from "../../../api/directory";
 import type {
   Campaign,
   DeliverableRequirement,
   DeliverableType,
   OfferType,
-} from "../../api/campaigns";
+} from "../../../api/campaigns";
 
 const offerLabels: Record<OfferType, string> = {
   gifted: "Gifted",

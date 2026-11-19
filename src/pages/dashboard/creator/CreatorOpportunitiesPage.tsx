@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
-import { AppButton, AppNotice, DashboardEmptyState, LoadingSkeleton, OpportunityCard } from "../../components";
-import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../api/campaigns";
-import { getCounties, type County } from "../../api/directory";
-import { countyLabel, dateLabel } from "./businessFormat";
+import { AppButton, AppNotice, DashboardEmptyState, LoadingSkeleton, OpportunityCard } from "../../../components";
+import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../../api/campaigns";
+import { getCounties, type County } from "../../../api/directory";
+import { countyLabel, dateLabel } from "../shared/campaignLabels";
 import {
   AccountCheck,
   titleClass,
   useWorkspaceSession,
   WorkspaceAccess,
-} from "./workspaceSession";
+} from "../shared/workspaceSession";
 
 const offerLabels = {
   gifted: "Gifted",

@@ -8,28 +8,28 @@ import {
   DashboardEmptyState,
   DashboardStatCard,
   LoadingSkeleton,
-} from "../../components";
-import { verifiedBusinessIds } from "../../api/auth";
+} from "../../../components";
+import { verifiedBusinessIds } from "../../../api/auth";
 import {
   CollaborationApiError,
   collaborationErrorMessage,
   deliverableStatusCounts,
   loadCollaborationWorkspace,
   type CampaignAccess,
-} from "../../api/collaborations";
-import { listCampaigns, type Campaign } from "../../api/campaigns";
-import { getBusiness, getCounties, type Business, type County } from "../../api/directory";
-import { expireSession } from "../auth/session";
-import { DeliverableOverview } from "./DeliverableOverview";
-import { campaignNote, countyLabel, dateLabel, statusLabel } from "./businessFormat";
-import { businessSearch, BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "./selectedBusiness";
+} from "../../../api/collaborations";
+import { listCampaigns, type Campaign } from "../../../api/campaigns";
+import { getBusiness, getCounties, type Business, type County } from "../../../api/directory";
+import { expireSession } from "../../auth/session";
+import { DeliverableOverview } from "../shared/DeliverableOverview";
+import { campaignNote, countyLabel, dateLabel, statusLabel } from "../shared/campaignLabels";
+import { businessSearch, BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "../shared/selectedBusiness";
 import {
   AccountCheck,
   titleClass,
   textLinkClass,
   useWorkspaceSession,
   WorkspaceAccess,
-} from "./workspaceSession";
+} from "../shared/workspaceSession";
 
 type CampaignLoad =
   | { status: "idle" | "loading" }
@@ -175,6 +175,9 @@ export default function BusinessDashboard() {
     : null;
   const submittedCount = scopedDeliverables ? deliverableStatusCounts(scopedDeliverables).submitted : null;
   const query = businessSearch(selected);
+  let deliverableStatus: "loading" | "error" | "ready" = "loading";
+  if (deliverables.status === "error") deliverableStatus = "error";
+  if (deliverables.status === "ready" && selected != null) deliverableStatus = "ready";
 
   return (
     <div className="flex flex-col gap-8">
@@ -254,13 +257,7 @@ export default function BusinessDashboard() {
           <section className="flex flex-col gap-4">
             <h2 className="text-xl font-semibold text-[var(--cg-primary-dark)]">Collaborations</h2>
             <DeliverableOverview
-              status={
-                deliverables.status === "ready" && selected != null
-                  ? "ready"
-                  : deliverables.status === "error"
-                    ? "error"
-                    : "loading"
-              }
+              status={deliverableStatus}
               access={scopedDeliverables ?? []}
               message={deliverables.status === "error" ? deliverables.message : ""}
               onRetry={() => setDeliverableAttempt((value) => value + 1)}

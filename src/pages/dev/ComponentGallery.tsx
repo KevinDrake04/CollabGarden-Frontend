@@ -55,7 +55,7 @@ import {
   draftSubmitBlockReason,
   reviewBlockReason,
   type DeliverableSummary,
-} from "../components";
+} from "../../components";
 import CampaignForm, {
   describeRequirements,
   emptyCampaignForm,
@@ -63,7 +63,7 @@ import CampaignForm, {
   validateCampaignForm,
   type CampaignFormErrors,
   type CampaignFormValues,
-} from "./campaigns/CampaignForm";
+} from "../campaigns/CampaignForm";
 
 const navigationLinks = [
   { label: "Home", to: "/", icon: Home },

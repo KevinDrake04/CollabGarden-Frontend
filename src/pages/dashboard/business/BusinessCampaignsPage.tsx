@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { AppButton, AppNotice, DashboardEmptyState, LoadingSkeleton } from "../../components";
-import { verifiedBusinessIds } from "../../api/auth";
-import { listCampaigns, type Campaign } from "../../api/campaigns";
-import { getCounties, type County } from "../../api/directory";
+import { AppButton, AppNotice, DashboardEmptyState, LoadingSkeleton } from "../../../components";
+import { verifiedBusinessIds } from "../../../api/auth";
+import { listCampaigns, type Campaign } from "../../../api/campaigns";
+import { getCounties, type County } from "../../../api/directory";
 import { CampaignStack } from "./BusinessDashboard";
-import { BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "./selectedBusiness";
+import { BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "../shared/selectedBusiness";
 import {
   AccountCheck,
   linkClass,
   titleClass,
   useWorkspaceSession,
   WorkspaceAccess,
-} from "./workspaceSession";
+} from "../shared/workspaceSession";
 
 type CampaignLoad =
   | { status: "idle" | "loading" }
