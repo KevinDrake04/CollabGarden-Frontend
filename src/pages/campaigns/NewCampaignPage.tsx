@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { AppButton, AppNotice, AppSelect, LoadingSkeleton } from "../../components";
 import { AuthError, verifiedBusinessIds } from "../../api/auth";
 import { readSession, refreshSession, watchSession, type Session } from "../auth/session";
+import { readRememberedBusiness, rememberBusiness } from "../dashboard/selectedBusiness";
 import { getCounties, type County } from "../../api/directory";
 import {
   CampaignApiError,
@@ -140,8 +141,10 @@ export default function NewCampaignPage() {
     setSelectedBusinessId((current) => {
       if (ids.length === 1) return ids[0];
       if (current != null && ids.includes(current)) return current;
+      const remembered = readRememberedBusiness(session.userId, ids);
+      if (remembered != null) return remembered;
       if (session.businessId != null && ids.includes(session.businessId)) return session.businessId;
-      return null;
+      return ids[0] ?? null;
     });
   }, [session]);
 
@@ -359,8 +362,14 @@ export default function NewCampaignPage() {
               value={selectedBusinessId == null ? "" : String(selectedBusinessId)}
               onChange={(value) => {
                 const id = Number(value);
-                setSelectedBusinessId(businessIds.includes(id) ? id : null);
+                if (!businessIds.includes(id)) {
+                  setSelectedBusinessId(null);
+                  setBusinessError("");
+                  return;
+                }
+                setSelectedBusinessId(id);
                 setBusinessError("");
+                if (session) rememberBusiness(session.userId, id);
               }}
               options={businessIds.map((id) => ({ value: String(id), label: businessLabel(id) }))}
               placeholder="Select a business"
