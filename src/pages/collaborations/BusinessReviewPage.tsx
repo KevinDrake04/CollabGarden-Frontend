@@ -12,6 +12,11 @@ import {
 } from "../../components";
 import { verifiedBusinessIds } from "../../api/auth";
 import {
+  BusinessSwitcher,
+  useBusinessNames,
+  useSelectedBusiness,
+} from "../dashboard/selectedBusiness";
+import {
   approveDeliverable,
   collaborationErrorMessage,
   requestRevision,
@@ -64,7 +69,7 @@ export default function BusinessReviewPage() {
       <div className="max-w-2xl">
         {production ? (
           <Link to="/dashboard/business" className={textLink}>
-            Back to dashboard
+            Overview
           </Link>
         ) : (
           <p className="eyebrow">Development</p>
@@ -124,13 +129,17 @@ export default function BusinessReviewPage() {
       )}
 
       {view.kind === "ready" && workspace && (
-        <BusinessWorkspace workspace={workspace} onAccess={updateAccess} reload={reload} />
+        production ? (
+          <ScopedBusinessReview workspace={workspace} onAccess={updateAccess} reload={reload} />
+        ) : (
+          <BusinessWorkspace workspace={workspace} onAccess={updateAccess} reload={reload} />
+        )
       )}
     </div>
   );
 }
 
-function BusinessWorkspace({
+function ScopedBusinessReview({
   workspace,
   onAccess,
   reload,
@@ -140,6 +149,42 @@ function BusinessWorkspace({
     update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],
   ) => void;
   reload: () => void;
+}) {
+  const ids = verifiedBusinessIds(workspace.session);
+  const { selected, choose } = useSelectedBusiness(
+    workspace.session.userId,
+    ids,
+    workspace.session.businessId,
+    true,
+  );
+  const names = useBusinessNames(ids);
+  const scoped = selected == null
+    ? workspace
+    : {
+        ...workspace,
+        access: workspace.access.filter((entry) => entry.campaign.business_id === selected),
+      };
+
+  return (
+    <>
+      <BusinessSwitcher ids={ids} names={names} selected={selected} onChange={choose} />
+      <BusinessWorkspace workspace={scoped} onAccess={onAccess} reload={reload} showSessionLine={false} />
+    </>
+  );
+}
+
+function BusinessWorkspace({
+  workspace,
+  onAccess,
+  reload,
+  showSessionLine = true,
+}: {
+  workspace: CollaborationWorkspace;
+  onAccess: (
+    update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],
+  ) => void;
+  reload: () => void;
+  showSessionLine?: boolean;
 }) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [comments, setComments] = useState<Record<number, string>>({});
@@ -193,10 +238,12 @@ function BusinessWorkspace({
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[var(--cg-muted)]">
-          Signed in{workspace.session.email ? ` as ${workspace.session.email}` : ""}
-          {workspace.session.role ? ` (${workspace.session.role})` : ""}.
-        </p>
+        {showSessionLine ? (
+          <p className="text-sm text-[var(--cg-muted)]">
+            Signed in{workspace.session.email ? ` as ${workspace.session.email}` : ""}
+            {workspace.session.role ? ` (${workspace.session.role})` : ""}.
+          </p>
+        ) : <span />}
         <AppButton variant="secondary" isDisabled={pending !== null} onPress={reload}>
           Reload
         </AppButton>

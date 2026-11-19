@@ -22,12 +22,10 @@ import {
   AppSelect,
   AppTextarea,
   ConfirmDialog,
-  DashboardSidebar,
   FoundingMemberCard,
   LoadingSkeleton,
   PendingAccountCard,
   adminStatusLabel,
-  type NavItem,
 } from "../../components";
 import { AuthError } from "../../api/auth";
 import type { County } from "../../api/directory";
@@ -72,10 +70,10 @@ import {
 import { useAdminData, type Resource } from "./useAdminData";
 
 const sections = {
-  overview: "Counts from the administrator lists.",
-  approvals: "Business and creator accounts with status pending.",
-  "founding-members": "Founding Member waitlist.",
-  campaigns: "Campaigns returned by the administrator list.",
+  overview: "Pending approvals, founding members, and campaigns.",
+  approvals: "Business and creator accounts waiting for a decision.",
+  "founding-members": "Founding member waitlist.",
+  campaigns: "Campaigns across CollabGarden.",
   accounts: "Pending, approved, and suspended accounts.",
 } as const;
 
@@ -90,14 +88,6 @@ const titles: Record<Section, string> = {
   campaigns: "Campaigns",
   accounts: "Accounts",
 };
-
-const adminLinks: NavItem[] = [
-  { label: "Overview", to: "/dashboard/admin", icon: LayoutDashboard, end: true },
-  { label: "Approvals", to: "/dashboard/admin/approvals", icon: ClipboardCheck },
-  { label: "Founding members", to: "/dashboard/admin/founding-members", icon: Sparkles },
-  { label: "Campaigns", to: "/dashboard/admin/campaigns", icon: Megaphone },
-  { label: "Accounts", to: "/dashboard/admin/accounts", icon: Users },
-];
 
 const textLink = "rounded-sm text-sm font-semibold text-[var(--cg-primary-dark)] no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cg-primary-dark)]";
 const actionLink = "inline-flex min-h-9 items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 text-sm font-semibold text-white no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cg-primary-dark)]";
@@ -440,7 +430,7 @@ export default function AdminDashboardPage() {
         const name = change.account.name || "The account";
         setActionNotice({
           tone: "success",
-          message: `The API confirmed ${name} is now ${adminStatusLabel(change.status).toLowerCase()}.`,
+          message: `${name} is now ${adminStatusLabel(change.status).toLowerCase()}.`,
         });
       } else {
         const note = reviewNote.trim();
@@ -451,7 +441,7 @@ export default function AdminDashboardPage() {
         if (!mounted.current) return;
         setActionNotice({
           tone: "success",
-          message: `The API confirmed ${memberName(change.entry)} is now ${adminStatusLabel(change.status).toLowerCase()}.`,
+          message: `${memberName(change.entry)} is now ${adminStatusLabel(change.status).toLowerCase()}.`,
         });
       }
       setPending(null);
@@ -465,7 +455,7 @@ export default function AdminDashboardPage() {
       }
       const message = error instanceof AdminApiError
         ? error.message
-        : "The administrator API could not be reached.";
+        : "The admin dashboard could not be reached.";
       setActionNotice({ tone: "error", message });
       setPending(null);
     } finally {
@@ -580,17 +570,11 @@ export default function AdminDashboardPage() {
   const accountEmpty = listEmpty("accounts", query, accountFilter !== "all" || accountType !== "all");
   const memberEmpty = listEmpty("members", query, waitlistFiltered);
   const campaignEmpty = listEmpty("campaigns", query, campaignActive);
-  const listsSettled = data.accounts.status === "ready"
-    && data.waitlist.status === "ready"
-    && data.campaigns.status === "ready";
-  const signedIn = adminSession?.email ? `Signed in as ${adminSession.email}.` : "Signed in.";
-  const accessMessage = preview === "loading"
+  const previewMessage = preview === "loading"
     ? "Preview: loading state. No administrator request is in progress."
     : preview === "empty"
       ? "Preview: empty administrator lists. These are not live records, and actions stay disabled."
-      : listsSettled
-        ? `${signedIn} The administrator API accepted this session.`
-        : signedIn;
+      : null;
   const destructive = pending?.kind === "account"
     ? pending.status === "suspended"
     : pending?.status === "rejected";
@@ -598,9 +582,9 @@ export default function AdminDashboardPage() {
     ? pending.status === "suspended" ? "Suspend account" : "Approve account"
     : "Update founding member";
   const dialogDescription = pending?.kind === "account"
-    ? `${pending.status === "suspended" ? "Suspend" : "Approve"} ${pending.account.name || "this account"}? The request sets status to ${pending.status}.`
+    ? `${pending.status === "suspended" ? "Suspend" : "Approve"} ${pending.account.name || "this account"}? Their status will become ${pending.status}.`
     : pending
-      ? `Set ${memberName(pending.entry)} to ${pending.status}? The request sends that status to the waitlist API.`
+      ? `Set ${memberName(pending.entry)} to ${pending.status}?`
       : "";
   const confirmLabel = pending?.kind === "account"
     ? pending.status === "suspended" ? "Suspend" : "Approve"
@@ -627,14 +611,8 @@ export default function AdminDashboardPage() {
     <div className="min-h-screen bg-[#f8f8f0] text-[var(--cg-text)]">
       <SiteHeader />
 
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row md:px-8 md:py-8">
-        <div className="w-full shrink-0 md:w-60">
-          <div className="md:sticky md:top-24">
-            <DashboardSidebar expand title="Admin" links={adminLinks} />
-          </div>
-        </div>
-
-        <div role="main" className="min-w-0 flex-1 space-y-5" aria-busy={showData && sectionBusy}>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
+        <div role="main" className="min-w-0 space-y-5" aria-busy={showData && sectionBusy}>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)]">
@@ -695,7 +673,7 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {showData && <AppNotice tone="info" message={accessMessage} />}
+          {showData && previewMessage && <AppNotice tone="info" message={previewMessage} />}
           {showData && actionNotice && (
             <div aria-live="polite">
               <AppNotice
@@ -950,7 +928,7 @@ export default function AdminDashboardPage() {
           {showData && section === "campaigns" && (
             <>
               <p className="max-w-xl text-sm text-[var(--cg-muted)]">
-                The administrator API lists campaigns. It has no campaign status update.
+                Campaign status cannot be changed from this list.
               </p>
               {data.campaigns.status === "ready" && (
                 <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1093,7 +1071,7 @@ export default function AdminDashboardPage() {
           {showData && section === "unknown" && (
             <AdminEmptyState
               title="This admin page is not available"
-              description="Choose Overview, Approvals, Founding members, Campaigns, or Accounts."
+              description="Choose Overview, Approvals, Accounts, Founding Members, or Campaigns."
             />
           )}
         </div>
@@ -1118,7 +1096,7 @@ export default function AdminDashboardPage() {
                 label="Review note"
                 value={reviewNote}
                 onChange={setReviewNote}
-                placeholder="Optional note sent as review_note"
+                placeholder="Optional note"
                 rows={3}
               />
             </div>

@@ -27,7 +27,11 @@ import EditCampaignPage from "./pages/campaigns/EditCampaignPage";
 import BusinessDashboardPage from "./pages/dashboard/BusinessDashboardPage";
 import CreatorDashboardPage from "./pages/dashboard/CreatorDashboardPage";
 import BusinessDashboard from "./pages/dashboard/BusinessDashboard";
+import BusinessCampaignsPage from "./pages/dashboard/BusinessCampaignsPage";
+import BusinessAccountPage from "./pages/dashboard/BusinessAccountPage";
 import CreatorDashboard from "./pages/dashboard/CreatorDashboard";
+import CreatorOpportunitiesPage from "./pages/dashboard/CreatorOpportunitiesPage";
+import CreatorAccountPage from "./pages/dashboard/CreatorAccountPage";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import AdminPrototypePage from "./pages/admin/AdminPrototypePage";
 
@@ -186,6 +190,20 @@ function CampaignWorkspace() {
   );
 }
 
+// Old in-page section links, such as /dashboard/business#campaigns.
+function HashRedirect({
+  paths,
+  children,
+}: {
+  paths: Record<string, string>;
+  children: ReactNode;
+}) {
+  const { hash, search } = useLocation();
+  const next = paths[decodeURIComponent(hash.replace(/^#/, ""))];
+  if (!next) return children;
+  return <Navigate to={`${next}${search}`} replace />;
+}
+
 // Old /app links now live under /dev/app.
 function LegacyAppRedirect() {
   const { pathname, search, hash } = useLocation();
@@ -227,10 +245,41 @@ export default function App() {
 
       {/* User-facing dashboards. Development previews stay under /dev/dashboard. */}
       <Route element={<DashboardShell />}>
-        <Route path="dashboard/business" element={<BusinessDashboard />} />
+        <Route
+          path="dashboard/business"
+          element={
+            <HashRedirect
+              paths={{
+                campaigns: "/dashboard/business/campaigns",
+                collaborations: "/dashboard/business/review",
+                account: "/dashboard/business/account",
+              }}
+            >
+              <BusinessDashboard />
+            </HashRedirect>
+          }
+        />
+        <Route path="dashboard/business/campaigns" element={<BusinessCampaignsPage />} />
         <Route path="dashboard/business/review" element={<BusinessReviewPage />} />
-        <Route path="dashboard/creator" element={<CreatorDashboard />} />
+        <Route path="dashboard/business/account" element={<BusinessAccountPage />} />
+        <Route
+          path="dashboard/creator"
+          element={
+            <HashRedirect
+              paths={{
+                opportunities: "/dashboard/creator/opportunities",
+                collaborations: "/dashboard/creator/deliverables",
+                profile: "/dashboard/creator/account",
+                settings: "/dashboard/creator/account",
+              }}
+            >
+              <CreatorDashboard />
+            </HashRedirect>
+          }
+        />
+        <Route path="dashboard/creator/opportunities" element={<CreatorOpportunitiesPage />} />
         <Route path="dashboard/creator/deliverables" element={<CreatorDeliverablesPage />} />
+        <Route path="dashboard/creator/account" element={<CreatorAccountPage />} />
       </Route>
 
       {/* Development workspace */}

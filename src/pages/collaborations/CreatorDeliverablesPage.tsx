@@ -41,7 +41,7 @@ function createBlockReason(role: CollaborationWorkspace["session"]["role"], avai
   if (role === "business") {
     return "This session is a business account. Use Business review to approve or request a revision.";
   }
-  if (available === 0) return "Add a deliverable after this account can read a campaign's deliverables.";
+  if (available === 0) return "Add a deliverable once a campaign is available.";
   return "";
 }
 
@@ -79,7 +79,7 @@ export default function CreatorDeliverablesPage() {
       <div className="max-w-2xl">
         {production ? (
           <Link to="/dashboard/creator" className={textLink}>
-            Back to dashboard
+            Overview
           </Link>
         ) : (
           <p className="eyebrow">Development</p>
@@ -88,7 +88,7 @@ export default function CreatorDeliverablesPage() {
           {production ? "Deliverables" : "Creator deliverables"}
         </h1>
         <p className="mt-2 text-base text-[var(--cg-muted)]">
-          Create and submit deliverables for campaigns this account can read.
+          Create and submit deliverables for your campaigns.
         </p>
         {production ? null : (
           <Link to="/dev/collaborations/business" className={`mt-2 inline-block ${textLink}`}>
@@ -139,7 +139,12 @@ export default function CreatorDeliverablesPage() {
       )}
 
       {view.kind === "ready" && workspace && (
-        <CreatorWorkspace workspace={workspace} onAccess={updateAccess} reload={reload} />
+        <CreatorWorkspace
+          workspace={workspace}
+          onAccess={updateAccess}
+          reload={reload}
+          showSessionLine={!production}
+        />
       )}
     </div>
   );
@@ -149,12 +154,14 @@ function CreatorWorkspace({
   workspace,
   onAccess,
   reload,
+  showSessionLine = true,
 }: {
   workspace: CollaborationWorkspace;
   onAccess: (
     update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],
   ) => void;
   reload: () => void;
+  showSessionLine?: boolean;
 }) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [formError, setFormError] = useState("");
@@ -269,10 +276,12 @@ function CreatorWorkspace({
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[var(--cg-muted)]">
-          Signed in{workspace.session.email ? ` as ${workspace.session.email}` : ""}
-          {workspace.session.role ? ` (${workspace.session.role})` : ""}.
-        </p>
+        {showSessionLine ? (
+          <p className="text-sm text-[var(--cg-muted)]">
+            Signed in{workspace.session.email ? ` as ${workspace.session.email}` : ""}
+            {workspace.session.role ? ` (${workspace.session.role})` : ""}.
+          </p>
+        ) : <span />}
         <AppButton variant="secondary" isDisabled={pending !== null} onPress={reload}>
           Reload
         </AppButton>
@@ -297,16 +306,13 @@ function CreatorWorkspace({
           title="No campaigns"
           description={
             workspace.access.length === 0
-              ? "No campaigns included a deliverable list this account can read."
-              : "Deliverables could not be loaded for the campaigns returned to this account."
+              ? "No campaigns are ready for a deliverable yet."
+              : "Deliverables could not be loaded."
           }
         />
       ) : (
         <section className="flex flex-col gap-3">
           <h2 className={headingClass}>Campaigns ({available.length})</h2>
-          <p className="text-sm text-[var(--cg-muted)]">
-            A campaign appears here when this account can read its deliverables.
-          </p>
           {available.map((entry) => {
             const campaignStatus = campaignStatusChip(entry.campaign.status);
             return (

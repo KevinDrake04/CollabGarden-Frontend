@@ -18,6 +18,7 @@ export function DeliverableOverview({
   emptyMessage,
   actionHref,
   actionLabel,
+  limit,
 }: {
   status: "loading" | "error" | "ready";
   access: CampaignAccess[];
@@ -26,9 +27,11 @@ export function DeliverableOverview({
   emptyMessage: string;
   actionHref: string;
   actionLabel: string;
+  limit?: number;
 }) {
   const readable = access.filter((entry) => !entry.error);
   const failed = access.filter((entry) => entry.error);
+  const shown = limit == null ? readable : readable.slice(0, limit);
 
   return (
     <div className="flex flex-col gap-4">
@@ -68,10 +71,12 @@ export function DeliverableOverview({
         <DashboardEmptyState message={emptyMessage} />
       )}
 
-      {status === "ready" && readable.length > 0 && (
+      {status === "ready" && shown.length > 0 && (
         <div className="grid grid-cols-1 gap-4">
-          {readable.map((entry) => {
+          {shown.map((entry) => {
             const campaignStatus = campaignStatusChip(entry.campaign.status);
+            const rows = limit == null ? entry.deliverables : entry.deliverables.slice(0, 3);
+            const hidden = entry.deliverables.length - rows.length;
             return (
             <article
               key={entry.campaign.campaign_id}
@@ -87,7 +92,7 @@ export function DeliverableOverview({
                 <p className="mt-3 text-sm text-[var(--cg-muted)]">No deliverables yet.</p>
               ) : (
                 <ul className="mt-3 flex flex-col gap-2">
-                  {entry.deliverables.map((deliverable) => (
+                  {rows.map((deliverable) => (
                     <li
                       key={deliverable.deliverable_id}
                       className="flex flex-wrap items-center justify-between gap-2"
@@ -99,6 +104,11 @@ export function DeliverableOverview({
                     </li>
                   ))}
                 </ul>
+              )}
+              {hidden > 0 && (
+                <p className="mt-2 text-sm text-[var(--cg-muted)]">
+                  {hidden} more
+                </p>
               )}
             </article>
             );
