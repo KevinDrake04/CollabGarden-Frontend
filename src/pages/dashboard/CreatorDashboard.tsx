@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { CheckCircle, Handshake, Sparkles } from "lucide-react";
+import { BadgeCheck, ClipboardList, Sparkles } from "lucide-react";
 import {
   AppAvatar,
   AppButton,
@@ -11,6 +11,13 @@ import {
   OpportunityCard,
 } from "../../components";
 import { AuthError, fetchAccount, type AccountProfile } from "../../api/auth";
+import {
+  CollaborationApiError,
+  collaborationErrorMessage,
+  deliverableStatusCounts,
+  loadCollaborationWorkspace,
+  type CampaignAccess,
+} from "../../api/collaborations";
 import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../api/campaigns";
 import {
   countyNameForId,
@@ -27,11 +34,12 @@ import {
   watchSession,
   type Session,
 } from "../auth/session";
+import { DeliverableOverview } from "./DeliverableOverview";
 
 const navItems = [
   { id: "overview", label: "Overview" },
   { id: "opportunities", label: "Opportunities" },
-  { id: "collaborations", label: "My Collaborations" },
+  { id: "collaborations", label: "Deliverables" },
   { id: "profile", label: "My Profile" },
   { id: "settings", label: "Settings" },
 ] as const;
@@ -55,6 +63,11 @@ type OpportunityLoad =
   | { status: "idle" | "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; campaigns: Campaign[]; businesses: BusinessSummary[]; counties: County[] };
+
+type DeliverableLoad =
+  | { status: "idle" | "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; access: CampaignAccess[] };
 
 function sectionClass(current: boolean) {
   return current
@@ -125,6 +138,8 @@ export default function CreatorDashboard() {
   const [accountAttempt, setAccountAttempt] = useState(0);
   const [opportunities, setOpportunities] = useState<OpportunityLoad>({ status: "idle" });
   const [opportunityAttempt, setOpportunityAttempt] = useState(0);
+  const [deliverables, setDeliverables] = useState<DeliverableLoad>({ status: "idle" });
+  const [deliverableAttempt, setDeliverableAttempt] = useState(0);
 
   useEffect(() => watchSession(() => setSession(readSession())), []);
 
@@ -220,6 +235,32 @@ export default function CreatorDashboard() {
     return () => controller.abort();
   }, [session, opportunityAttempt]);
 
+  useEffect(() => {
+    if (!session || session.role !== "creator" || accountLoad.status !== "ready") {
+      if (!session || session.role !== "creator") setDeliverables({ status: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    setDeliverables({ status: "loading" });
+    loadCollaborationWorkspace(session, controller.signal, { includeCreatorNames: false })
+      .then((workspace) => {
+        if (!controller.signal.aborted) {
+          setDeliverables({ status: "ready", access: workspace.access });
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || isAbort(error)) return;
+        if (error instanceof CollaborationApiError && error.status === 401) {
+          clearSession();
+          setSession(null);
+          setDeliverables({ status: "idle" });
+          return;
+        }
+        setDeliverables({ status: "error", message: collaborationErrorMessage(error) });
+      });
+    return () => controller.abort();
+  }, [session, accountLoad.status, deliverableAttempt]);
+
   if (!session) {
     return (
       <div className="flex flex-col gap-4">
@@ -249,6 +290,7 @@ export default function CreatorDashboard() {
 
   const displayName = creator?.display_name?.trim() || account?.displayName || session.email;
   const openCount = opportunities.status === "ready" ? opportunities.campaigns.length : null;
+  const deliverableCounts = deliverables.status === "ready" ? deliverableStatusCounts(deliverables.access) : null;
   const creatorCounty = creator ? countyNameForId(creator.county_id, opportunities.status === "ready" ? opportunities.counties : []) : "";
 
   return (
@@ -260,7 +302,7 @@ export default function CreatorDashboard() {
           </h1>
           <p className="mt-2 text-base text-[var(--cg-muted)]">
             {creator?.bio?.trim()
-              || "This workspace uses your signed-in account. Performance metrics and saved collaborations are not available from the current API."}
+              || "This workspace lists open campaigns and the deliverables this account can read."}
           </p>
         </div>
         <div
@@ -302,18 +344,18 @@ export default function CreatorDashboard() {
             icon={<Sparkles size={20} aria-hidden="true" />}
           />
           <DashboardStatCard
-            label="Pending collaborations"
-            value="Coming soon"
-            icon={<Handshake size={20} aria-hidden="true" />}
+            label="Submitted deliverables"
+            value={deliverableCounts ? deliverableCounts.submitted : "-"}
+            icon={<ClipboardList size={20} aria-hidden="true" />}
           />
           <DashboardStatCard
-            label="Completed collaborations"
-            value="Coming soon"
-            icon={<CheckCircle size={20} aria-hidden="true" />}
+            label="Approved deliverables"
+            value={deliverableCounts ? deliverableCounts.approved : "-"}
+            icon={<BadgeCheck size={20} aria-hidden="true" />}
           />
         </div>
         <p className="mt-3 text-xs text-[var(--cg-muted)]">
-          Open campaigns counts the public campaign list. It is not a personal performance metric. Collaboration totals are coming soon.
+          Open campaigns counts the public campaign list. Submitted and approved counts are deliverables this account can read.
         </p>
       </section>
 
@@ -369,10 +411,30 @@ export default function CreatorDashboard() {
 
           <section id="collaborations" className="scroll-mt-24">
             <SectionHeading
-              title="My Collaborations"
-              text="The account response does not include saved partnerships."
+              title="Deliverables"
+              text="Deliverable status for campaigns this account can read."
             />
-            <DashboardEmptyState message="Collaborations are coming soon. No collaboration history is available for this account." />
+            {accountLoad.status === "error" ? (
+              <p className="text-sm text-[var(--cg-muted)]">
+                Deliverables load after this account check succeeds.
+              </p>
+            ) : (
+              <DeliverableOverview
+                status={
+                  deliverables.status === "ready"
+                    ? "ready"
+                    : deliverables.status === "error"
+                      ? "error"
+                      : "loading"
+                }
+                access={deliverables.status === "ready" ? deliverables.access : []}
+                message={deliverables.status === "error" ? deliverables.message : ""}
+                onRetry={() => setDeliverableAttempt((value) => value + 1)}
+                emptyMessage="No campaigns included a deliverable list this account can read."
+                actionHref="/dashboard/creator/deliverables"
+                actionLabel="Create or submit a deliverable"
+              />
+            )}
           </section>
         </div>
 
@@ -411,6 +473,12 @@ export default function CreatorDashboard() {
               Quick actions
             </h2>
             <div className="mt-4 flex flex-col items-start gap-4">
+              <div className="flex flex-col gap-1">
+                <Link to="/dashboard/creator/deliverables" className={linkClass}>
+                  Open deliverables
+                </Link>
+                <span className="text-xs text-[var(--cg-muted)]">Create and submit deliverables</span>
+              </div>
               <div className="flex flex-col gap-1">
                 <Link to="/campaigns" className={linkClass}>
                   Browse campaigns

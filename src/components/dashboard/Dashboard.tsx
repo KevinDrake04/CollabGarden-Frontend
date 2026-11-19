@@ -94,6 +94,12 @@ const statusColor: Record<
   Closed: "success",
 };
 
+export function campaignStatusChip(status: string) {
+  const label: DashboardCampaignStatus =
+    status === "draft" ? "Draft" : status === "closed" ? "Closed" : "Open";
+  return { label, color: statusColor[label] };
+}
+
 export interface CampaignCardProps {
   title: string;
   description: string;

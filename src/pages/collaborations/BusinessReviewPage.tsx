@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { useRef, useState } from "react";
+import { Link, useLocation } from "react-router";
 import {
   AppButton,
   AppNotice,
@@ -10,94 +10,107 @@ import {
   reviewBlockReason,
   toDeliverableSummary,
 } from "../../components";
+import { verifiedBusinessIds } from "../../api/auth";
 import {
   approveDeliverable,
   collaborationErrorMessage,
-  isAbortError,
-  loadCollaborationWorkspace,
   requestRevision,
   upsertDeliverable,
   type CollaborationWorkspace,
   type Deliverable,
 } from "../../api/collaborations";
-
-type ViewState =
-  | { kind: "loading" }
-  | { kind: "signed-out"; message: string }
-  | { kind: "error"; message: string }
-  | { kind: "ready"; workspace: CollaborationWorkspace };
+import { dashboardPath, type AccountRole } from "../auth/session";
+import { clearSessionIfUnauthorized, useRoleWorkspace } from "./useRoleWorkspace";
 
 type Feedback = { tone: "success" | "error"; message: string };
 type Pending = { id: number; action: "approve" | "revision" };
 
-const pageClass = "mx-auto flex w-full max-w-3xl flex-col gap-6 text-[var(--cg-text)]";
+const productionClass = "flex w-full flex-col gap-6 text-[var(--cg-text)]";
+const developmentClass = "mx-auto flex w-full max-w-3xl flex-col gap-6 text-[var(--cg-text)]";
+const linkClass =
+  "inline-flex min-h-9 items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 text-sm font-semibold text-white no-underline hover:bg-[var(--cg-primary-dark)]";
+const textLink = "text-sm font-semibold text-[var(--cg-primary-dark)] no-underline";
+const headingClass = "text-xl font-semibold text-[var(--cg-primary-dark)]";
 
 function businessReviewBlock(role: CollaborationWorkspace["session"]["role"], status: string) {
   if (role === "creator") return "Review actions are available to business accounts.";
   return reviewBlockReason(status);
 }
 
+function roleLabel(role: AccountRole) {
+  if (role === "business") return "business";
+  if (role === "creator") return "creator";
+  return "administrator";
+}
+
+function LoadingBlock({ label }: { label: string }) {
+  return (
+    <div aria-live="polite" className="flex flex-col gap-3">
+      <p className="text-sm text-[var(--cg-muted)]">{label}</p>
+      <LoadingSkeleton />
+      <LoadingSkeleton />
+    </div>
+  );
+}
+
 export default function BusinessReviewPage() {
-  const [retry, setRetry] = useState(0);
-  const [view, setView] = useState<ViewState>({ kind: "loading" });
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setView({ kind: "loading" });
-    loadCollaborationWorkspace(controller.signal)
-      .then((result) => {
-        if (result.kind === "signed-out") setView(result);
-        else setView({ kind: "ready", workspace: result.workspace });
-      })
-      .catch((error: unknown) => {
-        if (isAbortError(error)) return;
-        setView({ kind: "error", message: collaborationErrorMessage(error) });
-      });
-    return () => controller.abort();
-  }, [retry]);
-
-  function reload() {
-    setRetry((value) => value + 1);
-  }
+  const { pathname } = useLocation();
+  const production = pathname.startsWith("/dashboard/");
+  const returnPath = production ? "/dashboard/business/review" : "/dev/collaborations/business";
+  const { view, workspace, reload, updateAccess } = useRoleWorkspace("business", production);
 
   return (
-    <div className={pageClass}>
-      <div>
-        <p className="eyebrow">Development</p>
-        <h1>Business review</h1>
-        <p>Review submitted deliverables for campaigns this account can read.</p>
-        <Link
-          to="/dev/collaborations/creator"
-          className="text-sm font-semibold text-[var(--cg-primary-dark)] no-underline"
-        >
-          Creator deliverables
-        </Link>
+    <div className={production ? productionClass : developmentClass}>
+      <div className="max-w-2xl">
+        {production ? (
+          <Link to="/dashboard/business" className={textLink}>
+            Back to dashboard
+          </Link>
+        ) : (
+          <p className="eyebrow">Development</p>
+        )}
+        <h1 className={production ? "mt-3 text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)] md:text-4xl" : undefined}>
+          {production ? "Review deliverables" : "Business review"}
+        </h1>
+        <p className="mt-2 text-base text-[var(--cg-muted)]">
+          Approve submitted deliverables or request a revision for this business.
+        </p>
+        {production ? null : (
+          <Link to="/dev/collaborations/creator" className={`mt-2 inline-block ${textLink}`}>
+            Creator deliverables
+          </Link>
+        )}
       </div>
 
-      {view.kind === "loading" && (
-        <div aria-live="polite" className="flex flex-col gap-3">
-          <p className="text-sm">Loading deliverables.</p>
-          <LoadingSkeleton />
-          <LoadingSkeleton />
-        </div>
+      {(view.kind === "checking" || view.kind === "loading") && (
+        <LoadingBlock label={view.kind === "checking" ? "Checking this account..." : "Loading deliverables."} />
       )}
 
       {view.kind === "signed-out" && (
         <div className="flex flex-col items-start gap-3">
-          <AppNotice tone="error" message={view.message} />
-          <p className="text-sm">
-            <Link
-              to="/login"
-              state={{ from: "/dev/collaborations/business" }}
-              className="font-semibold text-[var(--cg-primary-dark)]"
-            >
-              Log in
-            </Link>{" "}
-            as a business to review submissions.
-          </p>
-          <AppButton variant="secondary" onPress={reload}>
-            Try again
-          </AppButton>
+          <AppNotice
+            tone="info"
+            message={
+              view.expired
+                ? "Your session expired. Log in with a business account to review deliverables."
+                : "Sign in with a business account to review deliverables."
+            }
+          />
+          <Link to="/login" state={{ from: returnPath }} className={linkClass}>
+            Log in
+          </Link>
+        </div>
+      )}
+
+      {view.kind === "wrong-role" && (
+        <div className="flex flex-col items-start gap-3">
+          <AppNotice
+            tone="info"
+            message={`This page is for business accounts. You are signed in as a ${roleLabel(view.role)} account.`}
+          />
+          <Link to={dashboardPath(view.role)} className={linkClass}>
+            Go to your dashboard
+          </Link>
         </div>
       )}
 
@@ -110,21 +123,8 @@ export default function BusinessReviewPage() {
         </div>
       )}
 
-      {view.kind === "ready" && (
-        <BusinessWorkspace
-          workspace={view.workspace}
-          onAccess={(update) =>
-            setView((current) =>
-              current.kind === "ready"
-                ? {
-                    kind: "ready",
-                    workspace: { ...current.workspace, access: update(current.workspace.access) },
-                  }
-                : current,
-            )
-          }
-          reload={reload}
-        />
+      {view.kind === "ready" && workspace && (
+        <BusinessWorkspace workspace={workspace} onAccess={updateAccess} reload={reload} />
       )}
     </div>
   );
@@ -147,6 +147,8 @@ function BusinessWorkspace({
   const busy = useRef(false);
   const available = workspace.access.filter((entry) => !entry.error);
   const denied = workspace.access.filter((entry) => entry.error);
+  const unlinkedBusiness = workspace.session.role === "business"
+    && verifiedBusinessIds(workspace.session).length === 0;
 
   function showFeedback(next: Feedback) {
     setFeedback(next);
@@ -180,6 +182,7 @@ function BusinessWorkspace({
         message: `${action === "approve" ? "Approve" : "Revision request"} finished for "${updated.title}". Status is ${deliverableStatusLabel(updated.status)}.`,
       });
     } catch (error) {
+      if (clearSessionIfUnauthorized(error)) return;
       showFeedback({ tone: "error", message: collaborationErrorMessage(error) });
     } finally {
       busy.current = false;
@@ -190,7 +193,7 @@ function BusinessWorkspace({
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm">
+        <p className="text-sm text-[var(--cg-muted)]">
           Signed in{workspace.session.email ? ` as ${workspace.session.email}` : ""}
           {workspace.session.role ? ` (${workspace.session.role})` : ""}.
         </p>
@@ -205,75 +208,80 @@ function BusinessWorkspace({
         )}
       </div>
 
-      {denied.map((entry) => (
+      {unlinkedBusiness ? (
         <AppNotice
-          key={entry.campaign.campaign_id}
-          tone="error"
-          message={`${entry.campaign.name}: ${entry.error}`}
+          tone="info"
+          message="This account is not linked to a business, so there are no campaigns to show."
         />
-      ))}
+      ) : (
+        <>
+          {denied.map((entry) => (
+            <AppNotice
+              key={entry.campaign.campaign_id}
+              tone="error"
+              message={`${entry.campaign.name}: ${entry.error}`}
+            />
+          ))}
 
-      {available.length === 0 && (
-        <EmptyState
-          title="No campaigns to review"
-          description={
-            workspace.access.length === 0
-              ? "This account did not receive any campaigns."
-              : "Deliverables could not be read for the campaigns returned to this account."
-          }
-        />
+          {available.length === 0 && workspace.access.length === 0 && (
+            <EmptyState
+              title="No campaigns to review"
+              description="No campaigns for this business included a deliverable list."
+            />
+          )}
+
+          <ReviewGroup
+            title="Awaiting review"
+            empty="No submitted deliverables are waiting for review."
+            status="submitted"
+            workspace={workspace}
+            comments={comments}
+            pending={pending}
+            onComment={(id, comment) => setComments((current) => ({ ...current, [id]: comment }))}
+            onReview={review}
+          />
+
+          <section className="flex flex-col gap-3">
+            <h2 className={headingClass}>Review history</h2>
+            <p className="text-sm text-[var(--cg-muted)]">
+              Approved and revision-requested deliverables stay in this list.
+            </p>
+          </section>
+
+          <ReviewGroup
+            title="Revision requests"
+            empty="No revision requests."
+            status="revision_requested"
+            workspace={workspace}
+            comments={comments}
+            pending={pending}
+            onComment={(id, comment) => setComments((current) => ({ ...current, [id]: comment }))}
+            onReview={review}
+          />
+
+          <ReviewGroup
+            title="Approved"
+            empty="No approved deliverables."
+            status="approved"
+            workspace={workspace}
+            comments={comments}
+            pending={pending}
+            onComment={(id, comment) => setComments((current) => ({ ...current, [id]: comment }))}
+            onReview={review}
+          />
+
+          <ReviewGroup
+            title="Drafts"
+            empty="No drafts. Drafts are not ready for review."
+            status="draft"
+            workspace={workspace}
+            comments={comments}
+            pending={pending}
+            onComment={(id, comment) => setComments((current) => ({ ...current, [id]: comment }))}
+            onReview={review}
+          />
+        </>
       )}
-
-      <ReviewGroup
-        title="Awaiting review"
-        empty="No submitted deliverables are waiting for review."
-        status="submitted"
-        workspace={workspace}
-        comments={comments}
-        pending={pending}
-        onComment={(id, comment) => setComments((current) => ({ ...current, [id]: comment }))}
-        onReview={review}
-      />
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Review history</h2>
-        <p className="text-sm">
-          Approved and revision-requested deliverables stay in this list. The API does not return the revision comment, so the status and timestamps are the history this page can show.
-        </p>
-      </section>
-
-      <ReviewGroup
-        title="Revision requests"
-        empty="No revision requests."
-        status="revision_requested"
-        workspace={workspace}
-        comments={comments}
-        pending={pending}
-        onComment={(id, comment) => setComments((current) => ({ ...current, [id]: comment }))}
-        onReview={review}
-      />
-
-      <ReviewGroup
-        title="Approved"
-        empty="No approved deliverables."
-        status="approved"
-        workspace={workspace}
-        comments={comments}
-        pending={pending}
-        onComment={(id, comment) => setComments((current) => ({ ...current, [id]: comment }))}
-        onReview={review}
-      />
-
-      <ReviewGroup
-        title="Drafts"
-        empty="No drafts. Drafts are not ready for review."
-        status="draft"
-        workspace={workspace}
-        comments={comments}
-        pending={pending}
-        onComment={(id, comment) => setComments((current) => ({ ...current, [id]: comment }))}
-        onReview={review}
-      />
     </>
   );
 }
@@ -306,11 +314,11 @@ function ReviewGroup({
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">
+      <h2 className={headingClass}>
         {title} ({rows.length})
       </h2>
       {rows.length === 0 ? (
-        <p className="text-sm">{empty}</p>
+        <p className="text-sm text-[var(--cg-muted)]">{empty}</p>
       ) : (
         rows.map(({ deliverable, campaignName }) => (
           <DeliverableReview

@@ -25,6 +25,7 @@ export function AppButton({
       {...props}
       variant={variant === "destructive" ? "danger" : variant}
       className={[
+        "focus-visible:outline-2! focus-visible:outline-offset-2! focus-visible:outline-solid! focus-visible:outline-[var(--cg-primary)]!",
         variant === "primary" ? "bg-[var(--cg-primary)] text-white" : "",
         variant === "secondary" ? "border-[var(--cg-border)]" : "",
         className,

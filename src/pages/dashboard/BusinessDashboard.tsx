@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
-import { Handshake, List, Megaphone } from "lucide-react";
+import { ClipboardList, List, Megaphone } from "lucide-react";
 import {
   AppAvatar,
   AppButton,
@@ -14,6 +14,13 @@ import {
 } from "../../components";
 import { AuthError, verifiedBusinessIds } from "../../api/auth";
 import {
+  CollaborationApiError,
+  collaborationErrorMessage,
+  deliverableStatusCounts,
+  loadCollaborationWorkspace,
+  type CampaignAccess,
+} from "../../api/collaborations";
+import {
   CampaignApiError,
   getBusinesses,
   listCampaigns,
@@ -24,17 +31,19 @@ import {
 } from "../../api/campaigns";
 import { getBusiness, getCounties, type Business, type County } from "../../api/directory";
 import {
+  clearSession,
   dashboardPath,
   readSession,
   refreshSession,
   watchSession,
   type Session,
 } from "../auth/session";
+import { DeliverableOverview } from "./DeliverableOverview";
 
 const navItems = [
   { id: "overview", label: "Overview" },
   { id: "campaigns", label: "My Campaigns" },
-  { id: "collaborations", label: "Collaborations" },
+  { id: "collaborations", label: "Deliverables" },
   { id: "account", label: "Account" },
 ] as const;
 
@@ -64,6 +73,11 @@ type CampaignLoad =
       counties: County[];
       profile: Business | null;
     };
+
+type DeliverableLoad =
+  | { status: "idle" | "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; access: CampaignAccess[] };
 
 function sectionClass(current: boolean) {
   return current
@@ -163,6 +177,8 @@ export default function BusinessDashboard() {
   const [names, setNames] = useState<Map<number, string>>(() => new Map());
   const [campaignLoad, setCampaignLoad] = useState<CampaignLoad>({ status: "idle" });
   const [campaignAttempt, setCampaignAttempt] = useState(0);
+  const [deliverables, setDeliverables] = useState<DeliverableLoad>({ status: "idle" });
+  const [deliverableAttempt, setDeliverableAttempt] = useState(0);
 
   const businessIds = session?.role === "business" ? verifiedBusinessIds(session) : [];
   const businessKey = businessIds.join(",");
@@ -280,6 +296,32 @@ export default function BusinessDashboard() {
     return () => controller.abort();
   }, [accountState, session, selectedBusinessId, campaignAttempt]);
 
+  useEffect(() => {
+    if (accountState !== "ready" || !session || session.role !== "business") {
+      if (!session || session.role !== "business") setDeliverables({ status: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    setDeliverables({ status: "loading" });
+    loadCollaborationWorkspace(session, controller.signal, { includeCreatorNames: false })
+      .then((workspace) => {
+        if (!controller.signal.aborted) {
+          setDeliverables({ status: "ready", access: workspace.access });
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || isAbort(error)) return;
+        if (error instanceof CollaborationApiError && error.status === 401) {
+          clearSession();
+          setSession(null);
+          setDeliverables({ status: "idle" });
+          return;
+        }
+        setDeliverables({ status: "error", message: collaborationErrorMessage(error) });
+      });
+    return () => controller.abort();
+  }, [accountState, session, deliverableAttempt]);
+
   function businessLabel(id: number) {
     return names.get(id) ?? `Business ${id}`;
   }
@@ -317,6 +359,10 @@ export default function BusinessDashboard() {
     ? campaignLoad.campaigns.filter((campaign) => campaign.status === "open").length
     : null;
   const returnedCount = campaignLoad.status === "ready" ? campaignLoad.campaigns.length : null;
+  const scopedDeliverables = deliverables.status === "ready" && selectedBusinessId != null
+    ? deliverables.access.filter((entry) => entry.campaign.business_id === selectedBusinessId)
+    : null;
+  const submittedCount = scopedDeliverables ? deliverableStatusCounts(scopedDeliverables).submitted : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -327,7 +373,7 @@ export default function BusinessDashboard() {
           </h1>
           <p className="mt-2 text-base text-[var(--cg-muted)]">
             {profile?.description?.trim()
-              || "Campaigns on this page come from the campaign list for the selected business."}
+              || "Campaigns and deliverables on this page come from the campaign list for the selected business."}
           </p>
         </div>
         {accountState === "ready" && businessIds.length > 1 && (
@@ -399,13 +445,13 @@ export default function BusinessDashboard() {
                 icon={<List size={20} aria-hidden="true" />}
               />
               <DashboardStatCard
-                label="Collaborations"
-                value="Coming soon"
-                icon={<Handshake size={20} aria-hidden="true" />}
+                label="Submitted deliverables"
+                value={submittedCount ?? "-"}
+                icon={<ClipboardList size={20} aria-hidden="true" />}
               />
             </div>
             <p className="mt-3 text-xs text-[var(--cg-muted)]">
-              Counts use campaigns returned for the selected business. The campaign list has no business filter, so campaigns for other businesses are not shown. Draft and closed campaigns appear only when that response includes them. Budgets and collaboration totals are not available.
+              Open campaigns and campaigns returned use the campaign list for the selected business. Campaigns for other businesses are not shown. Draft and closed campaigns appear only when that response includes them. Submitted deliverables counts deliverables with status submitted for this business.
             </p>
           </section>
 
@@ -466,10 +512,24 @@ export default function BusinessDashboard() {
 
               <section id="collaborations" className="scroll-mt-24">
                 <SectionHeading
-                  title="Collaborations"
-                  text="Creator partnerships are not available from the current account or campaign responses."
+                  title="Deliverables"
+                  text="Deliverables returned for the selected business. Review a submission, approve it, or request a revision."
                 />
-                <DashboardEmptyState message="Collaborations are coming soon. This account does not include a collaboration list." />
+                <DeliverableOverview
+                  status={
+                    deliverables.status === "ready" && selectedBusinessId != null
+                      ? "ready"
+                      : deliverables.status === "error"
+                        ? "error"
+                        : "loading"
+                  }
+                  access={scopedDeliverables ?? []}
+                  message={deliverables.status === "error" ? deliverables.message : ""}
+                  onRetry={() => setDeliverableAttempt((value) => value + 1)}
+                  emptyMessage="No deliverables were returned for this business. A campaign appears here when this account can read its deliverable list."
+                  actionHref="/dashboard/business/review"
+                  actionLabel="Review deliverables"
+                />
               </section>
             </div>
 
@@ -507,6 +567,12 @@ export default function BusinessDashboard() {
                   Quick actions
                 </h2>
                 <div className="mt-4 flex flex-col items-start gap-4">
+                  <div className="flex flex-col gap-1">
+                    <Link to="/dashboard/business/review" className={linkClass}>
+                      Review deliverables
+                    </Link>
+                    <span className="text-xs text-[var(--cg-muted)]">Approve submissions or request a revision</span>
+                  </div>
                   <div className="flex flex-col gap-1">
                     <Link to="/campaigns/new" className={linkClass}>
                       Create campaign

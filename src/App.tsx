@@ -228,7 +228,9 @@ export default function App() {
       {/* User-facing dashboards. Development previews stay under /dev/dashboard. */}
       <Route element={<DashboardShell />}>
         <Route path="dashboard/business" element={<BusinessDashboard />} />
+        <Route path="dashboard/business/review" element={<BusinessReviewPage />} />
         <Route path="dashboard/creator" element={<CreatorDashboard />} />
+        <Route path="dashboard/creator/deliverables" element={<CreatorDeliverablesPage />} />
       </Route>
 
       {/* Development workspace */}

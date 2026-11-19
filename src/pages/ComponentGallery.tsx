@@ -689,19 +689,24 @@ export default function ComponentGallery() {
         </div>
 
         <div className="mt-5 flex flex-col gap-4">
+          {sampleDeliverables.some((deliverable) => draftSubmitBlockReason(deliverable.status)) && (
+            <p className="text-sm text-[var(--cg-muted)]">
+              Submit is available for drafts and revision requests.
+            </p>
+          )}
           {sampleDeliverables.map((deliverable) => {
             const reason = draftSubmitBlockReason(deliverable.status);
+            const resubmit = deliverable.status === "revision_requested";
             return (
               <DeliverableCard key={deliverable.id} deliverable={deliverable}>
                 <div className="flex flex-col items-start gap-2 border-t border-[var(--cg-border)] pt-3">
                   <AppButton
                     isDisabled={Boolean(reason)}
-                    aria-label={`Submit ${deliverable.title}`}
+                    aria-label={`${resubmit ? "Resubmit" : "Submit"} ${deliverable.title}`}
                     onPress={() => setNotice("Sample only. Submit was not sent to the API.")}
                   >
-                    Submit
+                    {resubmit ? "Resubmit" : "Submit"}
                   </AppButton>
-                  {reason && <p className="text-sm">{reason}</p>}
                 </div>
               </DeliverableCard>
             );

@@ -34,8 +34,8 @@ export function deliverableStatusLabel(status: string) {
 }
 
 export function draftSubmitBlockReason(status: string) {
-  if (status === "draft") return "";
-  return "Submit is available for drafts only.";
+  if (status === "draft" || status === "revision_requested") return "";
+  return "Submit is available for drafts and revision requests.";
 }
 
 export function reviewBlockReason(status: string) {
@@ -191,7 +191,7 @@ export function DeliverableCard({
     <Card role="article" aria-label={deliverable.title} className={`${cardClass} flex flex-col gap-3`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-[var(--cg-text)]">{deliverable.title}</h3>
+          <h3 className="break-words text-lg font-semibold text-[var(--cg-text)]">{deliverable.title}</h3>
           <p className="text-sm">Deliverable #{deliverable.id}</p>
         </div>
         <DeliverableStatusBadge status={deliverable.status} />
@@ -529,9 +529,6 @@ export function DeliverableReview({
           helper="Required for a revision request. Approve can include this comment, and it can be left blank."
         />
         {blockedReason && <p className="text-sm">{blockedReason}</p>}
-        {!blockedReason && commentMissing && (
-          <p className="text-sm">Enter revision feedback before requesting a revision.</p>
-        )}
         {error && <AppNotice tone="error" message={error} />}
         <div className="flex flex-wrap gap-3">
           <AppButton
