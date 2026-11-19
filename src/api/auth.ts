@@ -1,7 +1,9 @@
 /// <reference types="vite/client" />
 
 // Login: POST /auth/login returns access_token and user { id, email, role }.
-// The OpenAPI document leaves that response schema untyped.
+// Signup: POST /auth/signup takes email, password, role, and business_name or display_name.
+// Its success body may be empty and does not start a session.
+// The OpenAPI document leaves the login and signup response schemas untyped.
 // GET /auth/me is also untyped in OpenAPI and now returns the signed-in account:
 // id, email, role, business_id, and business_ids.
 // Creators receive null business identifiers. role is "business", "creator", or "admin".
@@ -191,4 +193,33 @@ export async function login(email: string, password: string): Promise<Session> {
     businessId: account.businessId,
     businessIds: account.businessIds,
   };
+}
+
+export async function signup(input: {
+  email: string;
+  password: string;
+  role: "business" | "creator";
+  name: string;
+}) {
+  const payload: {
+    email: string;
+    password: string;
+    role: "business" | "creator";
+    business_name?: string;
+    display_name?: string;
+  } = {
+    email: input.email,
+    password: input.password,
+    role: input.role,
+  };
+  if (input.role === "business") payload.business_name = input.name;
+  else payload.display_name = input.name;
+
+  const response = await fetch(`${apiUrl()}/auth/signup`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await readBody(response);
+  if (!response.ok) throw new AuthError(response.status, errorMessage(response.status, body));
 }

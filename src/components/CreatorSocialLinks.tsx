@@ -22,6 +22,7 @@ export type CreatorSocialLink = {
 export type CreatorSocialLinksProps = {
   links: CreatorSocialLink[];
   onChange: (links: CreatorSocialLink[]) => void;
+  disabled?: boolean;
 };
 
 const platforms: {
@@ -122,7 +123,11 @@ function replaceLink(
     .map((item) => ({ platform: item.id, url: saved.get(item.id) ?? "" }));
 }
 
-export function CreatorSocialLinks({ links, onChange }: CreatorSocialLinksProps) {
+export function CreatorSocialLinks({
+  links,
+  onChange,
+  disabled = false,
+}: CreatorSocialLinksProps) {
   const [editing, setEditing] = useState<SocialPlatform>("instagram");
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -132,6 +137,7 @@ export function CreatorSocialLinks({ links, onChange }: CreatorSocialLinksProps)
   const savedUrl = links.find((link) => link.platform === editing)?.url;
 
   function openPlatform(platform: SocialPlatform) {
+    if (disabled) return;
     setEditing(platform);
     setDraft(links.find((link) => link.platform === platform)?.url ?? "");
     setError("");
@@ -144,6 +150,7 @@ export function CreatorSocialLinks({ links, onChange }: CreatorSocialLinksProps)
   }
 
   function save() {
+    if (disabled) return;
     const nextError = profileLinkError(editing, draft);
     if (nextError) {
       setError(nextError);
@@ -154,6 +161,7 @@ export function CreatorSocialLinks({ links, onChange }: CreatorSocialLinksProps)
   }
 
   function remove(platform: SocialPlatform) {
+    if (disabled) return;
     onChange(replaceLink(links, platform, null));
     if (editing === platform) close();
   }
@@ -165,23 +173,33 @@ export function CreatorSocialLinks({ links, onChange }: CreatorSocialLinksProps)
           Social media profiles
         </h2>
         <p className="mt-1 text-xs">
-          Optional. A saved link is not a login and does not verify the account.
+          {disabled
+            ? "Social profiles are not available yet."
+            : "Optional. A saved link is not a login and does not verify the account."}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Social media profiles">
+      <div
+        className="grid grid-cols-2 gap-2"
+        role="group"
+        aria-label="Social media profiles"
+        aria-disabled={disabled}
+      >
         {platforms.map((platform) => {
           const added = links.some((link) => link.platform === platform.id);
           return (
             <button
               key={platform.id}
               type="button"
+              disabled={disabled}
               aria-pressed={added}
               onClick={() => openPlatform(platform.id)}
-              className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-left ${
-                added
-                  ? "border-[var(--cg-primary)] bg-[var(--cg-background)]"
-                  : "border-[var(--cg-border)] bg-white hover:bg-[var(--cg-background)]"
+              className={`flex min-h-12 items-center gap-2 rounded-xl border px-2.5 py-2 text-left ${
+                disabled
+                  ? "cursor-not-allowed border-[var(--cg-border)] bg-white text-[var(--cg-muted)]"
+                  : added
+                    ? "cursor-pointer border-[var(--cg-primary)] bg-[var(--cg-background)]"
+                    : "cursor-pointer border-[var(--cg-border)] bg-white hover:bg-[var(--cg-background)]"
               }`}
             >
               <img
@@ -189,15 +207,21 @@ export function CreatorSocialLinks({ links, onChange }: CreatorSocialLinksProps)
                 alt=""
                 width={20}
                 height={20}
-                className="h-5 w-5 shrink-0"
+                className={`h-5 w-5 shrink-0 ${disabled ? "opacity-40" : ""}`}
               />
-              <span className="min-w-0 text-sm font-medium text-[var(--cg-primary-dark)]">
+              <span
+                className={`min-w-0 text-sm font-medium ${
+                  disabled ? "text-[var(--cg-muted)]" : "text-[var(--cg-primary-dark)]"
+                }`}
+              >
                 {platform.label}
               </span>
               {added && (
                 <Check
                   size={16}
-                  className="ml-auto shrink-0 text-[var(--cg-primary)]"
+                  className={`ml-auto shrink-0 ${
+                    disabled ? "text-[var(--cg-muted)]" : "text-[var(--cg-primary)]"
+                  }`}
                   aria-hidden="true"
                 />
               )}
@@ -226,7 +250,8 @@ export function CreatorSocialLinks({ links, onChange }: CreatorSocialLinksProps)
                 </span>
                 <button
                   type="button"
-                  className="shrink-0 cursor-pointer text-sm font-semibold text-[var(--cg-primary-dark)]"
+                  disabled={disabled}
+                  className="shrink-0 cursor-pointer text-sm font-semibold text-[var(--cg-primary-dark)] disabled:cursor-not-allowed disabled:text-[var(--cg-muted)]"
                   onClick={() => remove(platform.id)}
                 >
                   Remove
