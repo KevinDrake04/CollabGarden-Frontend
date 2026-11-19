@@ -13,7 +13,6 @@ import {
 import {
   AppNotice,
   CountyList,
-  ProfileActions,
   ProfileDetails,
   ProfileHeader,
 } from "../../components";
@@ -70,11 +69,6 @@ function CreatorProfile({
         imageUrl={creator.photo_url || undefined}
         summary={niche}
         emptySummary="No niche listed."
-        action={
-          <ProfileActions
-            actions={[{ label: "Collaborate", disabled: true, badge: "Coming soon" }]}
-          />
-        }
       >
         <div className="mt-4">
           <div className="mb-2 text-sm text-[var(--cg-muted)]">County</div>

@@ -12,3 +12,9 @@
   --cg-warning: #d89532;
   --cg-error: #c94c4c;
 }
+
+.cg-focus:focus,
+.cg-focus:focus-visible {
+  outline: 2px solid var(--cg-primary-dark) !important;
+  outline-offset: 2px !important;
+}

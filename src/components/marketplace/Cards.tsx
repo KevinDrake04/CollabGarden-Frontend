@@ -1,5 +1,5 @@
 import { Card, Chip } from "@heroui/react";
-import { ArrowUpRight, MapPin, Star, Users } from "lucide-react";
+import { ArrowUpRight, MapPin, Star } from "lucide-react";
 import { AppAvatar } from "../ui/Avatar";
 import { AppButton } from "../ui/Buttons";
 
@@ -119,28 +119,6 @@ export function CreatorPackageCard({
         >
           {selected ? "Selected" : "Choose package"}
         </AppButton>
-      )}
-    </Card>
-  );
-}
-
-// Available for a future dashboard, not displayed in the gallery yet.
-interface MetricCardProps {
-  label: string;
-  value: string | number;
-  detail?: string;
-}
-
-export function MetricCard({ label, value, detail }: MetricCardProps) {
-  return (
-    <Card className={`${cardClass} flex flex-col gap-2`}>
-      <span className={mutedClass}>{label}</span>
-      <strong className="text-2xl">{value}</strong>
-      {detail && (
-        <span className={`inline-flex items-center gap-1 ${mutedClass}`}>
-          <Users size={14} aria-hidden="true" />
-          {detail}
-        </span>
       )}
     </Card>
   );

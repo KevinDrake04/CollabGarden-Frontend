@@ -55,7 +55,7 @@ import {
   draftSubmitBlockReason,
   reviewBlockReason,
   type DeliverableSummary,
-} from "../components";
+} from "../../components";
 import CampaignForm, {
   describeRequirements,
   emptyCampaignForm,
@@ -63,7 +63,7 @@ import CampaignForm, {
   validateCampaignForm,
   type CampaignFormErrors,
   type CampaignFormValues,
-} from "./campaigns/CampaignForm";
+} from "../campaigns/CampaignForm";
 
 const navigationLinks = [
   { label: "Home", to: "/", icon: Home },
@@ -689,19 +689,24 @@ export default function ComponentGallery() {
         </div>
 
         <div className="mt-5 flex flex-col gap-4">
+          {sampleDeliverables.some((deliverable) => draftSubmitBlockReason(deliverable.status)) && (
+            <p className="text-sm text-[var(--cg-muted)]">
+              Submit is available for drafts and revision requests.
+            </p>
+          )}
           {sampleDeliverables.map((deliverable) => {
             const reason = draftSubmitBlockReason(deliverable.status);
+            const resubmit = deliverable.status === "revision_requested";
             return (
               <DeliverableCard key={deliverable.id} deliverable={deliverable}>
                 <div className="flex flex-col items-start gap-2 border-t border-[var(--cg-border)] pt-3">
                   <AppButton
                     isDisabled={Boolean(reason)}
-                    aria-label={`Submit ${deliverable.title}`}
+                    aria-label={`${resubmit ? "Resubmit" : "Submit"} ${deliverable.title}`}
                     onPress={() => setNotice("Sample only. Submit was not sent to the API.")}
                   >
-                    Submit
+                    {resubmit ? "Resubmit" : "Submit"}
                   </AppButton>
-                  {reason && <p className="text-sm">{reason}</p>}
                 </div>
               </DeliverableCard>
             );

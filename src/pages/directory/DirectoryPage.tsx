@@ -44,8 +44,7 @@ function sameFilters(left: Filters, right: Filters) {
     && left.counties.join("\0") === right.counties.join("\0");
 }
 
-// Keep the existing parameter names. Business is the default tab, so its type
-// stays out of the URL. Other parameters, such as preview, are left in place.
+// Business is the default tab, so its type stays out of the URL.
 function writeFilterParams(filters: Filters, current: URLSearchParams) {
   const params = new URLSearchParams(current);
   params.delete("type");
@@ -242,16 +241,11 @@ export default function DirectoryPage() {
   }
 
   const hasFilters = Boolean(filters.query.trim() || filters.counties.length);
-
-  // Preserve the preview states used for Jira 7.1 testing.
-  const preview = searchParams.get("preview");
-  const loading = preview === "loading" || (!preview && status === "loading");
-  const error = preview === "error" || (!preview && status === "error");
-  const visibleResults = preview === "empty" ? [] : entries;
+  const loading = status === "loading";
+  const error = status === "error";
   const itemName = filters.type === "business" ? "business" : "creator";
-  const countLabel = visibleResults.length === 1
-    ? itemName
-    : filters.type === "business" ? "businesses" : "creators";
+  const pluralName = filters.type === "business" ? "businesses" : "creators";
+  const countLabel = entries.length === 1 ? itemName : pluralName;
 
   return (
     <div className="-m-12 min-h-[calc(100dvh-4.5rem)] bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-my-8">
@@ -304,7 +298,7 @@ export default function DirectoryPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         {!loading && !error && (
           <p className="text-sm font-medium" aria-live="polite">
-            {visibleResults.length} {countLabel} found
+            {entries.length} {countLabel} found
           </p>
         )}
         <div className="flex flex-wrap gap-2">
@@ -341,7 +335,7 @@ export default function DirectoryPage() {
             Try again
           </AppButton>
         </div>
-      ) : visibleResults.length === 0 ? (
+      ) : entries.length === 0 ? (
         <EmptyState
           title="No results found"
           description={hasFilters ? "Try a different search or county." : "There are no listings to show right now."}
@@ -353,7 +347,7 @@ export default function DirectoryPage() {
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {visibleResults.map((entry) => <DirectoryCard key={entry.id} entry={entry} />)}
+          {entries.map((entry) => <DirectoryCard key={entry.id} entry={entry} />)}
         </div>
       )}
     </div>

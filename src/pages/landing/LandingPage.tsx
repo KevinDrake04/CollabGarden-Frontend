@@ -169,8 +169,11 @@ export default function LandingPage() {
           <p className="mt-4 max-w-md text-base text-[var(--cg-muted)]">
             CollabGarden connects local New Jersey businesses with content creators.
           </p>
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <ActionLink to="/discover?type=creator">Find Creators</ActionLink>
+            <ActionLink to="/signup?role=business" variant="secondary">
+              Join as Business
+            </ActionLink>
             <ActionLink to="/signup?role=creator" variant="secondary">
               Join as Creator
             </ActionLink>
@@ -289,8 +292,11 @@ export default function LandingPage() {
               Businesses and creators in New Jersey can join CollabGarden.
             </p>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <ActionLink to="/discover?type=creator">Find Creators</ActionLink>
+            <ActionLink to="/signup?role=business" variant="secondary">
+              Join as Business
+            </ActionLink>
             <ActionLink to="/signup?role=creator" variant="secondary">
               Join as Creator
             </ActionLink>

@@ -6,7 +6,7 @@ import { AppButton } from "../../components";
 
 export type SignupRole = "business" | "creator";
 
-export const signupRoles: {
+const signupRoles: {
   id: SignupRole;
   title: string;
   description: string;

@@ -1,15 +1,15 @@
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
-import { InputGroup, Label, TextField } from "@heroui/react";
+import { FieldError, InputGroup, Label, TextField } from "@heroui/react";
 import {
   AppButton,
   AppInput,
   AppNotice,
   AppSelect,
   CreatorSocialLinks,
-  type CreatorSocialLink,
 } from "../../components";
+import { AuthError, signup } from "../../api/auth";
 import {
   parseSignupRole,
   RoleOptions,
@@ -98,21 +98,82 @@ function RolePrompt({
   );
 }
 
+function validEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function SignupForm({ role }: { role: SignupRole }) {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [county, setCounty] = useState("");
-  const [socialLinks, setSocialLinks] = useState<CreatorSocialLink[]>([]);
-  const [message, setMessage] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [notice, setNotice] = useState<{
+    tone: "success" | "error" | "info";
+    message: string;
+  } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [completed, setCompleted] = useState(false);
+  const lock = useRef(false);
   const isBusiness = role === "business";
+  const locked = submitting || completed;
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("Sign up isn't connected yet.");
+    if (lock.current) return;
+
+    const trimmedEmail = email.trim();
+    const trimmedName = name.trim();
+    const nextEmailError = validEmail(trimmedEmail) ? "" : "Enter a valid email address.";
+    const nextNameError = trimmedName
+      ? ""
+      : isBusiness
+        ? "Enter your business name."
+        : "Enter your display name.";
+    const nextPasswordError = password.length >= 6
+      ? ""
+      : "Use at least 6 characters for your password.";
+
+    setEmailError(nextEmailError);
+    setNameError(nextNameError);
+    setPasswordError(nextPasswordError);
+    if (nextEmailError || nextNameError || nextPasswordError) {
+      setNotice(null);
+      return;
+    }
+
+    lock.current = true;
+    setSubmitting(true);
+    setNotice(null);
+    try {
+      await signup({
+        email: trimmedEmail,
+        password,
+        role,
+        name: trimmedName,
+      });
+      setCompleted(true);
+      setPassword("");
+      setNotice({
+        tone: "success",
+        message: "Your account was created. Check your email if verification is required.",
+      });
+    } catch (error) {
+      lock.current = false;
+      const fallback = "Sign up failed. Please try again.";
+      const message = error instanceof AuthError || error instanceof Error
+        ? error.message || fallback
+        : fallback;
+      setNotice({ tone: "error", message });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <form onSubmit={onSubmit} className={cardClass}>
+    <form noValidate onSubmit={onSubmit} className={cardClass}>
       <h1 className="font-bold tracking-tight text-[var(--cg-primary-dark)]">
         {isBusiness ? "Join as a business" : "Join as a creator"}
       </h1>
@@ -122,7 +183,16 @@ function SignupForm({ role }: { role: SignupRole }) {
           : "Connect with businesses and discover opportunities."}{" "}
         <Link
           to="/signup"
-          className="font-semibold whitespace-nowrap text-[var(--cg-primary-dark)] no-underline"
+          aria-disabled={submitting}
+          tabIndex={submitting ? -1 : undefined}
+          className={`font-semibold whitespace-nowrap no-underline ${
+            submitting
+              ? "pointer-events-none text-[var(--cg-muted)]"
+              : "text-[var(--cg-primary-dark)]"
+          }`}
+          onClick={(event) => {
+            if (submitting) event.preventDefault();
+          }}
         >
           Change role
         </Link>
@@ -134,6 +204,13 @@ function SignupForm({ role }: { role: SignupRole }) {
           name="email"
           type="email"
           placeholder="name@example.com"
+          value={email}
+          onChange={(value) => {
+            setEmail(value);
+            setEmailError("");
+          }}
+          error={emailError}
+          disabled={locked}
           required
         />
 
@@ -141,6 +218,8 @@ function SignupForm({ role }: { role: SignupRole }) {
           name="password"
           type={showPassword ? "text" : "password"}
           isRequired
+          isDisabled={locked}
+          isInvalid={Boolean(passwordError)}
           className="flex w-full flex-col gap-1.5"
         >
           <Label className="text-sm font-medium text-[var(--cg-text)]">
@@ -152,7 +231,10 @@ function SignupForm({ role }: { role: SignupRole }) {
               placeholder="Create a password"
               value={password}
               autoComplete="new-password"
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setPasswordError("");
+              }}
             />
             <InputGroup.Suffix>
               <button
@@ -170,42 +252,55 @@ function SignupForm({ role }: { role: SignupRole }) {
               </button>
             </InputGroup.Suffix>
           </InputGroup>
+          {passwordError && (
+            <FieldError className="text-xs text-[var(--cg-error)]">{passwordError}</FieldError>
+          )}
         </TextField>
 
         <AppSelect
           label="County"
           name="county"
-          value={county}
-          onChange={setCounty}
           options={countyOptions}
           placeholder="Select a county"
-          required
+          disabled
+          helper="County selection is not available yet."
         />
 
         <AppInput
           label={isBusiness ? "Business Name" : "Display Name"}
           name={isBusiness ? "businessName" : "displayName"}
           placeholder={isBusiness ? "Garden Cafe" : "Alex Rivera"}
+          value={name}
+          onChange={(value) => {
+            setName(value);
+            setNameError("");
+          }}
+          error={nameError}
+          disabled={locked}
           required
         />
 
         {!isBusiness && (
-          <CreatorSocialLinks links={socialLinks} onChange={setSocialLinks} />
+          <CreatorSocialLinks links={[]} onChange={() => {}} disabled />
         )}
       </div>
 
-      {message && (
+      <p className="mt-4 text-sm text-[var(--cg-muted)]">
+        Profiles need approval before they appear in the public directory.
+      </p>
+
+      {notice && (
         <div className="mt-4">
           <AppNotice
-            tone="info"
-            message={message}
-            onClose={() => setMessage("")}
+            tone={notice.tone}
+            message={notice.message}
+            onClose={notice.tone === "success" ? undefined : () => setNotice(null)}
           />
         </div>
       )}
 
-      <AppButton type="submit" className="mt-6 w-full">
-        Sign up
+      <AppButton type="submit" className="mt-6 w-full" isDisabled={locked}>
+        {submitting ? "Signing up..." : "Sign up"}
       </AppButton>
 
       <div className="mt-4 flex items-center gap-3 text-xs text-[var(--cg-muted)]">
@@ -218,7 +313,11 @@ function SignupForm({ role }: { role: SignupRole }) {
         type="button"
         variant="secondary"
         className="mt-4 w-full gap-2 border border-[var(--cg-border)] bg-white text-[var(--cg-primary-dark)]"
-        onPress={() => setMessage("Continue with Google is coming soon.")}
+        isDisabled={locked}
+        onPress={() => {
+          if (locked) return;
+          setNotice({ tone: "info", message: "Continue with Google is coming soon." });
+        }}
       >
         <img
           src="/icons/social/google.svg"
@@ -234,13 +333,24 @@ function SignupForm({ role }: { role: SignupRole }) {
       </AppButton>
 
       <p className="mt-4 text-center text-sm">
-        Already have an account?{" "}
-        <Link
-          to="/login"
-          className="font-semibold text-[var(--cg-primary-dark)] no-underline"
-        >
-          Log in
-        </Link>
+        {completed ? (
+          <Link
+            to="/login"
+            className="font-semibold text-[var(--cg-primary-dark)] no-underline"
+          >
+            Log in to your account
+          </Link>
+        ) : (
+          <>
+            Already have an account?{" "}
+            <Link
+              to="/login"
+              className="font-semibold text-[var(--cg-primary-dark)] no-underline"
+            >
+              Log in
+            </Link>
+          </>
+        )}
       </p>
     </form>
   );

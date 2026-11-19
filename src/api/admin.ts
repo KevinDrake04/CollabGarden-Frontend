@@ -8,7 +8,6 @@
 // GET   /api/v1/admin/campaigns
 // PATCH /api/v1/admin/businesses/{business_id}
 // PATCH /api/v1/admin/creators/{creator_id}
-// GET   /auth/me
 // Public display data: GET /api/v1/businesses
 // There is no administrator statistics route. Campaign create and update
 // are not administrator routes and are not called here.
@@ -35,6 +34,11 @@ export type AccountSummary = {
 
 export type CampaignStatus = "draft" | "open" | "closed";
 
+export type DeliverableRequirement = {
+  deliverable_type: string;
+  quantity: number;
+};
+
 export type CampaignRecord = {
   campaign_id: number;
   business_id: number;
@@ -45,6 +49,7 @@ export type CampaignRecord = {
   starts_on: string | null;
   ends_on: string | null;
   county_ids: number[];
+  deliverable_requirements: DeliverableRequirement[];
 };
 
 export type WaitlistStatus = "waiting" | "invited" | "active" | "rejected";
@@ -63,6 +68,7 @@ export type WaitlistEntry = {
   invited_at: string | null;
   activated_at: string | null;
   created_at: string | null;
+  updated_at: string | null;
 };
 
 export type WaitlistSort = "created_at" | "name" | "status" | "county_id";
@@ -82,18 +88,12 @@ export type CampaignQuery = {
   ends_before?: string;
 };
 
-export type CurrentAccount = {
-  id: string | null;
-  email: string | null;
-  role: string | null;
-};
-
 export type BusinessName = {
   business_id: number;
   name: string;
 };
 
-export function messageFromApiBody(status: number, body: unknown) {
+function messageFromApiBody(status: number, body: unknown) {
   if (body && typeof body === "object" && "detail" in body) {
     const detail = (body as { detail: unknown }).detail;
     if (typeof detail === "string" && detail.trim()) return detail.trim();
@@ -195,6 +195,19 @@ function integerList(value: unknown) {
   return value.filter((item): item is number => Number.isInteger(item));
 }
 
+function parseRequirements(value: unknown): DeliverableRequirement[] {
+  if (!Array.isArray(value)) return [];
+  const requirements: DeliverableRequirement[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const deliverableType = text(item.deliverable_type);
+    const quantity = integer(item.quantity);
+    if (!deliverableType || quantity == null || quantity < 1) continue;
+    requirements.push({ deliverable_type: deliverableType, quantity });
+  }
+  return requirements;
+}
+
 function requireId(id: number, label: string) {
   if (!Number.isInteger(id) || id < 1) {
     throw new AdminApiError(0, `A valid ${label} is required.`);
@@ -251,6 +264,7 @@ function parseCampaign(value: unknown): CampaignRecord | null {
     starts_on: optionalText(value.starts_on),
     ends_on: optionalText(value.ends_on),
     county_ids: integerList(value.county_ids),
+    deliverable_requirements: parseRequirements(value.deliverable_requirements),
   };
 }
 
@@ -273,6 +287,7 @@ function parseWaitlist(value: unknown): WaitlistEntry | null {
     invited_at: optionalText(value.invited_at),
     activated_at: optionalText(value.activated_at),
     created_at: optionalText(value.created_at),
+    updated_at: optionalText(value.updated_at),
   };
 }
 
@@ -301,17 +316,6 @@ export async function listAdminCampaigns(
 ) {
   const body = await request(`/api/v1/admin/campaigns${toQuery({ ...query })}`, token, { signal });
   return parseList(body, "campaign", parseCampaign);
-}
-
-export async function getAccount(token: string, signal: AbortSignal): Promise<CurrentAccount> {
-  const body = await request("/auth/me", token, { signal });
-  const record = isRecord(body) ? body : {};
-  const user = isRecord(record.user) ? record.user : record;
-  return {
-    id: text(user.id),
-    email: text(user.email),
-    role: text(user.role),
-  };
 }
 
 export async function listBusinessNames(signal: AbortSignal): Promise<BusinessName[]> {

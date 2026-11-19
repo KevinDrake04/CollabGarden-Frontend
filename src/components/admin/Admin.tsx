@@ -3,7 +3,6 @@ import { Card, Chip } from "@heroui/react";
 import { ClipboardList } from "lucide-react";
 
 // Presentational administrator pieces. Pages pass in real or sample data.
-// DashboardStatCard is not on this branch, so counts use AdminStatCard.
 const cardClass = "rounded-2xl border border-[var(--cg-border)] bg-white p-5 text-[var(--cg-text)]";
 
 const statusLabels: Record<string, string> = {
@@ -43,7 +42,12 @@ export function AdminStatusBadge({ status }: { status: string }) {
   const key = status.trim().toLowerCase();
 
   return (
-    <Chip size="sm" variant="soft" color={statusColors[key] ?? "default"} className="shrink-0">
+    <Chip
+      size="sm"
+      variant="soft"
+      color={statusColors[key] ?? "default"}
+      className={key === "pending" ? "shrink-0 bg-[#f6e4c4] text-[#6d4510]" : "shrink-0"}
+    >
       {adminStatusLabel(status)}
     </Chip>
   );

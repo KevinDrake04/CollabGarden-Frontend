@@ -2,7 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AppButton, AppNotice, AppSelect, LoadingSkeleton } from "../../components";
 import { AuthError, verifiedBusinessIds } from "../../api/auth";
-import { readSession, refreshSession, watchSession, type Session } from "../auth/session";
+import {
+  expireSession,
+  readSession,
+  readSessionExpired,
+  refreshSession,
+  useExpiredSessionRedirect,
+  watchSession,
+  type Session,
+} from "../auth/session";
+import { readRememberedBusiness, rememberBusiness } from "../dashboard/shared/selectedBusiness";
 import { getCounties, type County } from "../../api/directory";
 import {
   CampaignApiError,
@@ -64,6 +73,7 @@ function isAbort(error: unknown) {
 }
 
 export default function NewCampaignPage() {
+  useExpiredSessionRedirect();
   const [counties, setCounties] = useState<County[]>([]);
   const [loadStatus, setLoadStatus] = useState<"loading" | "ready" | "error">("loading");
   const [retry, setRetry] = useState(0);
@@ -116,13 +126,14 @@ export default function NewCampaignPage() {
     setAccountCheck("pending");
     setAccountError("");
     refreshSession(controller.signal)
-      .then(() => {
-        if (!controller.signal.aborted) setAccountCheck("ready");
+      .then((next) => {
+        if (controller.signal.aborted || !next) return;
+        setAccountCheck("ready");
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || isAbort(error)) return;
         if (error instanceof AuthError && error.status === 401) {
-          setAccountCheck("ready");
+          expireSession();
           return;
         }
         setAccountCheck("error");
@@ -140,8 +151,10 @@ export default function NewCampaignPage() {
     setSelectedBusinessId((current) => {
       if (ids.length === 1) return ids[0];
       if (current != null && ids.includes(current)) return current;
+      const remembered = readRememberedBusiness(session.userId, ids);
+      if (remembered != null) return remembered;
       if (session.businessId != null && ids.includes(session.businessId)) return session.businessId;
-      return null;
+      return ids[0] ?? null;
     });
   }, [session]);
 
@@ -200,7 +213,9 @@ export default function NewCampaignPage() {
       const fresh = await refreshSession(controller.signal);
       if (controller.signal.aborted) return;
       if (!fresh) {
-        setApiError("Sign in with a business account before saving or publishing.");
+        if (!readSessionExpired()) {
+          setApiError("Sign in with a business account before saving or publishing.");
+        }
         return;
       }
       if (fresh.role !== "business") {
@@ -246,13 +261,13 @@ export default function NewCampaignPage() {
       setSaved(campaign);
     } catch (error) {
       if (controller.signal.aborted || isAbort(error)) return;
+      if ((error instanceof AuthError || error instanceof CampaignApiError) && error.status === 401) {
+        expireSession();
+        return;
+      }
       if (error instanceof CampaignApiError && error.campaign) {
         remember(error.campaign);
         setApiError(partialMessage(error.campaign, target, error.message, !existed));
-        return;
-      }
-      if (error instanceof AuthError && error.status === 401) {
-        setApiError("Sign in with a business account before saving or publishing.");
         return;
       }
       setApiError(failureMessage(error));
@@ -304,7 +319,10 @@ export default function NewCampaignPage() {
           </p>
         </div>
 
-        {!session && (
+        {!session && readSessionExpired() && (
+          <p className="mt-6 text-sm">Checking this account...</p>
+        )}
+        {!session && !readSessionExpired() && (
           <div className="mt-6 space-y-3">
             <AppNotice
               tone="info"
@@ -359,8 +377,14 @@ export default function NewCampaignPage() {
               value={selectedBusinessId == null ? "" : String(selectedBusinessId)}
               onChange={(value) => {
                 const id = Number(value);
-                setSelectedBusinessId(businessIds.includes(id) ? id : null);
+                if (!businessIds.includes(id)) {
+                  setSelectedBusinessId(null);
+                  setBusinessError("");
+                  return;
+                }
+                setSelectedBusinessId(id);
                 setBusinessError("");
+                if (session) rememberBusiness(session.userId, id);
               }}
               options={businessIds.map((id) => ({ value: String(id), label: businessLabel(id) }))}
               placeholder="Select a business"

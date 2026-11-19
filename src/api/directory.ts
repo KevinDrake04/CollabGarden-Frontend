@@ -27,7 +27,7 @@ export type Business = {
   county_ids: number[] | null;
 };
 
-export type SamplePost = {
+type SamplePost = {
   url?: string | null;
   caption?: string | null;
 };
@@ -109,7 +109,7 @@ export function getCreator(creatorId: number, signal: AbortSignal) {
   return get<Creator>(`/api/v1/creators/${creatorId}`, signal);
 }
 
-export async function getDirectory(
+async function getDirectory(
   type: DirectoryType,
   selectedCounties: string[],
   counties: County[],
@@ -267,13 +267,13 @@ export function loadDirectory(type: DirectoryType, selectedCounties: string[]) {
   return request;
 }
 
-export type SavedBusiness = {
+type SavedBusiness = {
   business: Business;
   counties: County[];
   savedAt: number;
 };
 
-export type SavedCreator = {
+type SavedCreator = {
   creator: Creator;
   counties: County[];
   savedAt: number;
