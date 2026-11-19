@@ -1,27 +1,10 @@
 /// <reference types="vite/client" />
 
-// Deliverable contract from the CollabGarden OpenAPI spec.
-// This branch does not sign users in. When a session already exists, reads and
-// writes send Authorization: Bearer <accessToken>.
-//
-// GET  /auth/me
-// GET  /api/v1/campaigns
-// GET  /api/v1/creators
-// GET  /api/v1/campaigns/{campaign_id}/deliverables
-// POST /api/v1/campaigns/{campaign_id}/deliverables
-// POST /api/v1/deliverables/{deliverable_id}/submit
-// POST /api/v1/deliverables/{deliverable_id}/approve
-// POST /api/v1/deliverables/{deliverable_id}/revision-requests
-//
-// Status values: draft, submitted, approved, revision_requested.
-// Attachments are link or image URLs. There is no file upload and no
-// deliverable update endpoint. Approve takes an optional comment. A revision
-// request requires a comment. The deliverable response does not include
-// review comments.
-// GET /api/v1/campaigns is publicly readable and has no assignment field.
-// A campaign is usable here only when its deliverable list can be read.
+import { verifiedBusinessIds, type Session } from "./auth";
 
-export type AccountRole = "business" | "creator";
+// Callers pass a session. Requests send its access token, and a 401 is returned
+// to the caller. A business only loads deliverables for its verified business ids.
+
 export type AttachmentType = "link" | "image";
 export type CampaignStatus = "draft" | "open" | "closed";
 export type OfferType = "gifted" | "dining" | "paid";
@@ -69,21 +52,11 @@ export type CampaignAccess = {
   error: string | null;
 };
 
-export type StoredSession = {
-  accessToken: string;
-  role: AccountRole | null;
-  email: string | null;
-};
-
 export type CollaborationWorkspace = {
-  session: StoredSession;
+  session: Session;
   access: CampaignAccess[];
   creatorNames: Record<number, string>;
 };
-
-export type WorkspaceResult =
-  | { kind: "signed-out"; message: string }
-  | { kind: "ready"; workspace: CollaborationWorkspace };
 
 export class CollaborationApiError extends Error {
   readonly status: number;
@@ -95,10 +68,6 @@ export class CollaborationApiError extends Error {
   }
 }
 
-// The login screen on this branch does not write a session. The campaign
-// login work stores { accessToken, role, email } under this key.
-const sessionStorageKey = "collabgarden.session";
-
 export function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
 }
@@ -107,22 +76,6 @@ export function collaborationErrorMessage(error: unknown) {
   if (error instanceof CollaborationApiError) return error.message;
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Could not load deliverables.";
-}
-
-export function readStoredSession(): StoredSession | null {
-  try {
-    const raw = sessionStorage.getItem(sessionStorageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredSession>;
-    if (typeof parsed.accessToken !== "string" || !parsed.accessToken.trim()) return null;
-    return {
-      accessToken: parsed.accessToken.trim(),
-      role: parsed.role === "business" || parsed.role === "creator" ? parsed.role : null,
-      email: typeof parsed.email === "string" && parsed.email.trim() ? parsed.email : null,
-    };
-  } catch {
-    return null;
-  }
 }
 
 function baseUrl() {
@@ -242,30 +195,29 @@ export function parseDeliverable(value: unknown): Deliverable {
   };
 }
 
-function parseCampaign(value: unknown): Campaign {
-  const status = isRecord(value) ? value.status : null;
-  if (
-    !isRecord(value) ||
-    typeof value.campaign_id !== "number" ||
-    typeof value.business_id !== "number" ||
-    typeof value.name !== "string" ||
-    (status !== "draft" && status !== "open" && status !== "closed")
-  ) {
-    throw new CollaborationApiError(200, "Campaign list was not in the expected format.");
-  }
+function parseCampaign(value: unknown): Campaign | null {
+  if (!isRecord(value)) return null;
+  const campaignId = value.campaign_id;
+  const businessId = value.business_id;
+  const name = value.name;
+  const status = value.status;
+  if (typeof campaignId !== "number" || !Number.isInteger(campaignId)) return null;
+  if (typeof businessId !== "number" || !Number.isInteger(businessId)) return null;
+  if (typeof name !== "string" || !name.trim()) return null;
+  if (status !== "draft" && status !== "open" && status !== "closed") return null;
 
   const offer = value.offer_type;
   return {
-    campaign_id: value.campaign_id,
-    business_id: value.business_id,
-    name: value.name,
+    campaign_id: campaignId,
+    business_id: businessId,
+    name,
     description: optionalText(value.description),
     status,
     offer_type: offer === "gifted" || offer === "dining" || offer === "paid" ? offer : null,
     starts_on: optionalText(value.starts_on),
     ends_on: optionalText(value.ends_on),
     county_ids: Array.isArray(value.county_ids)
-      ? value.county_ids.filter((id) => typeof id === "number")
+      ? value.county_ids.filter((id): id is number => typeof id === "number" && Number.isInteger(id))
       : [],
   };
 }
@@ -275,7 +227,14 @@ async function listCampaigns(token: string, signal?: AbortSignal) {
   if (!Array.isArray(body)) {
     throw new CollaborationApiError(200, "Campaign list was not in the expected format.");
   }
-  return body.map(parseCampaign);
+  const campaigns = body.flatMap((item) => {
+    const campaign = parseCampaign(item);
+    return campaign ? [campaign] : [];
+  });
+  if (body.length > 0 && campaigns.length === 0) {
+    throw new CollaborationApiError(200, "Campaign list was not in the expected format.");
+  }
+  return campaigns;
 }
 
 async function listCreatorNames(signal?: AbortSignal) {
@@ -295,7 +254,18 @@ async function listCreatorNames(signal?: AbortSignal) {
   }
 }
 
-async function loadCampaign(campaign: Campaign, token: string, signal?: AbortSignal): Promise<CampaignAccess> {
+function campaignsForAccount(campaigns: Campaign[], session: Session) {
+  if (session.role !== "business") return campaigns;
+  const allowed = new Set(verifiedBusinessIds(session));
+  return campaigns.filter((campaign) => allowed.has(campaign.business_id));
+}
+
+async function loadCampaign(
+  campaign: Campaign,
+  token: string,
+  role: Session["role"],
+  signal?: AbortSignal,
+): Promise<CampaignAccess | null> {
   try {
     const body = await request(`/api/v1/campaigns/${campaign.campaign_id}/deliverables`, { token, signal });
     if (!Array.isArray(body)) {
@@ -308,33 +278,42 @@ async function loadCampaign(campaign: Campaign, token: string, signal?: AbortSig
     return { campaign, deliverables: body.map(parseDeliverable), error: null };
   } catch (error) {
     if (isAbortError(error)) throw error;
-    if (error instanceof CollaborationApiError && error.status !== 401) {
-      return { campaign, deliverables: [], error: error.message };
-    }
-    throw error;
+    if (!(error instanceof CollaborationApiError)) throw error;
+    if (error.status === 401) throw error;
+    if (role !== "business" && (error.status === 403 || error.status === 404)) return null;
+    return { campaign, deliverables: [], error: error.message };
   }
 }
 
-export async function loadCollaborationWorkspace(signal?: AbortSignal): Promise<WorkspaceResult> {
-  const session = readStoredSession();
-  try {
-    await request("/auth/me", { token: session?.accessToken ?? null, signal });
-  } catch (error) {
-    if (isAbortError(error)) throw error;
-    if (!session) return { kind: "signed-out", message: collaborationErrorMessage(error) };
-    throw error;
+export async function loadCollaborationWorkspace(
+  session: Session,
+  signal?: AbortSignal,
+  options?: { includeCreatorNames?: boolean },
+) {
+  if (session.role === "business" && verifiedBusinessIds(session).length === 0) {
+    return {
+      session,
+      access: [],
+      creatorNames: {},
+    };
   }
 
-  if (!session) return { kind: "signed-out", message: "Not authenticated" };
-
+  const includeCreatorNames = options?.includeCreatorNames !== false;
   const [campaigns, creatorNames] = await Promise.all([
     listCampaigns(session.accessToken, signal),
-    listCreatorNames(signal),
+    includeCreatorNames ? listCreatorNames(signal) : Promise.resolve({}),
   ]);
-  const access = await Promise.all(
-    campaigns.map((campaign) => loadCampaign(campaign, session.accessToken, signal)),
+  const probed = await Promise.all(
+    campaignsForAccount(campaigns, session).map((campaign) =>
+      loadCampaign(campaign, session.accessToken, session.role, signal),
+    ),
   );
-  return { kind: "ready", workspace: { session, access, creatorNames } };
+  const workspace: CollaborationWorkspace = {
+    session,
+    access: probed.filter((entry): entry is CampaignAccess => entry !== null),
+    creatorNames,
+  };
+  return workspace;
 }
 
 export function createDeliverable(
@@ -402,6 +381,33 @@ export function requestRevision(
     token,
     signal,
   }).then(parseDeliverable);
+}
+
+const countedStatuses = ["draft", "submitted", "approved", "revision_requested"] as const;
+
+export type CountedDeliverableStatus = (typeof countedStatuses)[number];
+
+export function deliverableStatusCounts(access: CampaignAccess[]) {
+  const counts: Record<CountedDeliverableStatus, number> = {
+    draft: 0,
+    submitted: 0,
+    approved: 0,
+    revision_requested: 0,
+  };
+  for (const entry of access) {
+    if (entry.error) continue;
+    for (const deliverable of entry.deliverables) {
+      if (
+        deliverable.status === "draft"
+        || deliverable.status === "submitted"
+        || deliverable.status === "approved"
+        || deliverable.status === "revision_requested"
+      ) {
+        counts[deliverable.status] += 1;
+      }
+    }
+  }
+  return counts;
 }
 
 export function upsertDeliverable(access: CampaignAccess[], deliverable: Deliverable) {

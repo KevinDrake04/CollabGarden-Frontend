@@ -7,4 +7,6 @@ dist/
 *.tsbuildinfo
 .env
 .env.*
+!.env.example
 .env.local
+testing-artifacts/
