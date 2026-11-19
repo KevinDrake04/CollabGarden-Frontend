@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { Menu, Sprout, X, type LucideIcon } from "lucide-react";
 
@@ -190,13 +190,15 @@ export function DashboardSidebar({
   title = "Workspace",
   expand = false,
 }: DashboardSidebarProps) {
+  const titleId = useId();
   return (
-    <div
+    <nav
+      aria-labelledby={titleId}
       className={`flex flex-col gap-1 rounded-xl border border-[var(--cg-border)] bg-white p-3 ${
         expand ? "w-full" : "max-w-60"
       }`}
     >
-      <strong className="px-3 py-2 text-sm">{title}</strong>
+      <strong id={titleId} className="px-3 py-2 text-sm">{title}</strong>
       {links.map((item) => {
         const Icon = item.icon;
         return (
@@ -205,7 +207,7 @@ export function DashboardSidebar({
             to={item.to}
             end={item.end}
             className={({ isActive }) =>
-              `${linkClass} ${isActive ? currentClass : idleClass}`
+              `${linkClass} rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cg-primary-dark)] ${isActive ? currentClass : idleClass}`
             }
           >
             {Icon && <Icon size={17} aria-hidden="true" />}
@@ -213,7 +215,7 @@ export function DashboardSidebar({
           </NavLink>
         );
       })}
-    </div>
+    </nav>
   );
 }
 

@@ -4,7 +4,9 @@ import {
   BadgeCheck,
   Ban,
   ClipboardCheck,
+  Clock,
   LayoutDashboard,
+  Mail,
   Megaphone,
   Sparkles,
   Users,
@@ -15,7 +17,6 @@ import {
   AdminStatCard,
   AdminStatusBadge,
   AppButton,
-  AppInput,
   AppNotice,
   AppSearch,
   AppSelect,
@@ -28,6 +29,7 @@ import {
   adminStatusLabel,
   type NavItem,
 } from "../../components";
+import { AuthError } from "../../api/auth";
 import type { County } from "../../api/directory";
 import {
   AdminApiError,
@@ -35,6 +37,7 @@ import {
   updateWaitlistEntry,
   type AccountStatus,
   type AccountSummary,
+  type AccountType,
   type BusinessName,
   type CampaignQuery,
   type CampaignRecord,
@@ -50,6 +53,7 @@ import {
   countyList,
   countyName,
   dateParam,
+  deliverableSummary,
   formatDate,
   formatDateRange,
   matchesQuery,
@@ -57,7 +61,14 @@ import {
   roleLabel,
 } from "./format";
 import { SiteHeader } from "../auth/SiteHeader";
-import { isBlockedRole, readStoredSession, watchStoredSession } from "./session";
+import {
+  clearSession,
+  dashboardPath,
+  readSession,
+  refreshSession,
+  watchSession,
+  type Session,
+} from "../auth/session";
 import { useAdminData, type Resource } from "./useAdminData";
 
 const sections = {
@@ -69,6 +80,8 @@ const sections = {
 } as const;
 
 type Section = keyof typeof sections;
+type AccountTypeFilter = "all" | AccountType;
+type ListKind = "approvals" | "accounts" | "members" | "campaigns";
 
 const titles: Record<Section, string> = {
   overview: "Overview",
@@ -86,7 +99,8 @@ const adminLinks: NavItem[] = [
   { label: "Accounts", to: "/dashboard/admin/accounts", icon: Users },
 ];
 
-const textLink = "text-sm font-semibold text-[var(--cg-primary-dark)] no-underline";
+const textLink = "rounded-sm text-sm font-semibold text-[var(--cg-primary-dark)] no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cg-primary-dark)]";
+const actionLink = "inline-flex min-h-9 items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 text-sm font-semibold text-white no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cg-primary-dark)]";
 
 type PendingChange =
   | { kind: "account"; account: AccountSummary; status: AccountStatus }
@@ -97,6 +111,19 @@ type Notice = { tone: "success" | "error"; message: string };
 function sectionFrom(param: string | undefined): Section | "unknown" {
   if (!param) return "overview";
   return param in sections ? (param as Section) : "unknown";
+}
+
+function sessionRoleName(role: Session["role"]) {
+  if (role === "business") return "business";
+  if (role === "creator") return "creator";
+  return "administrator";
+}
+
+function sessionFailure(error: unknown) {
+  if (error instanceof AuthError || error instanceof Error) {
+    return error.message || "Couldn't confirm this account.";
+  }
+  return "Couldn't confirm this account.";
 }
 
 function memberName(entry: WaitlistEntry) {
@@ -113,20 +140,51 @@ function memberDetails(entry: WaitlistEntry, counties: County[]) {
   if (entry.created_at) lines.push(`Added ${formatDate(entry.created_at)}`);
   if (entry.invited_at) lines.push(`Invited ${formatDate(entry.invited_at)}`);
   if (entry.activated_at) lines.push(`Activated ${formatDate(entry.activated_at)}`);
+  if (entry.updated_at) lines.push(`Updated ${formatDate(entry.updated_at)}`);
   return lines;
 }
 
 function campaignDetail(campaign: CampaignRecord, counties: County[], businesses: BusinessName[]) {
-  return [
+  const parts = [
     businessName(campaign.business_id, businesses),
     offerLabel(campaign.offer_type),
     formatDateRange(campaign.starts_on, campaign.ends_on),
     countyList(campaign.county_ids, counties),
-  ].join(" · ");
+  ];
+  const requirements = deliverableSummary(campaign.deliverable_requirements);
+  if (requirements) parts.push(requirements);
+  return parts.join(" · ");
 }
 
 function byName<T extends { name: string }>(items: T[]) {
   return [...items].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function listEmpty(kind: ListKind, search: string, filtered: boolean) {
+  if (search.trim()) {
+    if (kind === "approvals") return { title: "No matching approvals", description: "No pending accounts match this search." };
+    if (kind === "accounts") return { title: "No matching accounts", description: "No accounts match this search." };
+    if (kind === "members") return { title: "No matching founding members", description: "No founding members match this search." };
+    return { title: "No matching campaigns", description: "No campaigns match this search." };
+  }
+  if (filtered) {
+    if (kind === "approvals") return { title: "No matching approvals", description: "No pending accounts match this filter." };
+    if (kind === "accounts") return { title: "No matching accounts", description: "No accounts match this filter." };
+    if (kind === "members") return { title: "No matching founding members", description: "No founding members match this filter." };
+    return { title: "No matching campaigns", description: "No campaigns match this filter." };
+  }
+  if (kind === "approvals") return { title: "No pending accounts", description: "Accounts with status pending will show up here." };
+  if (kind === "accounts") return { title: "No accounts", description: "The administrator list is empty." };
+  if (kind === "members") return { title: "No founding members", description: "The waitlist is empty." };
+  return { title: "No campaigns", description: "The administrator list is empty." };
+}
+
+function searchStatus(query: string, count: number, singular: string, plural: string) {
+  if (!query.trim()) return null;
+  const message = count === 0
+    ? `No ${plural} match this search.`
+    : `${count} ${count === 1 ? singular : plural} match this search.`;
+  return <p className="sr-only" aria-live="polite">{message}</p>;
 }
 
 function ResourceBody({
@@ -136,7 +194,6 @@ function ResourceBody({
   emptyTitle,
   emptyDescription,
   onRetry,
-  quietError = false,
   children,
 }: {
   status: Resource<unknown>["status"];
@@ -145,7 +202,6 @@ function ResourceBody({
   emptyTitle: string;
   emptyDescription: string;
   onRetry: () => void;
-  quietError?: boolean;
   children: ReactNode;
 }) {
   if (status === "loading") {
@@ -157,7 +213,6 @@ function ResourceBody({
     );
   }
   if (status === "error") {
-    if (quietError) return null;
     return (
       <div role="alert" className="space-y-3">
         <AppNotice tone="error" message={message} />
@@ -190,7 +245,7 @@ function DateField({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded-xl border border-[var(--cg-border)] bg-white px-3 py-2 text-sm font-normal disabled:opacity-60"
+        className="rounded-xl border border-[var(--cg-border)] bg-white px-3 py-2 text-sm font-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cg-primary-dark)] disabled:opacity-60"
       />
     </label>
   );
@@ -205,10 +260,20 @@ function MemberLink({ href }: { href: string }) {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="break-all text-sm font-medium text-[var(--cg-primary-dark)]"
+      className="break-all rounded-sm text-sm font-medium text-[var(--cg-primary-dark)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cg-primary-dark)]"
     >
       {href}
+      <span className="sr-only"> (opens in a new tab)</span>
     </a>
+  );
+}
+
+function ResourceNotice({ message }: { message: string }) {
+  if (!message) return null;
+  return (
+    <div role="alert">
+      <AppNotice tone="error" message={message} />
+    </div>
   );
 }
 
@@ -218,9 +283,16 @@ export default function AdminDashboardPage() {
   const previewParam = new URLSearchParams(location.search).get("preview");
   const preview = previewParam === "loading" || previewParam === "empty" ? previewParam : null;
   const section = sectionFrom(params.section);
-  const [session, setSession] = useState(() => readStoredSession());
+  const [session, setSession] = useState<Session | null>(() => readSession());
+  const [accountState, setAccountState] = useState<"pending" | "ready" | "error">(() =>
+    readSession() ? "pending" : "ready",
+  );
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [accountError, setAccountError] = useState("");
+  const [accountAttempt, setAccountAttempt] = useState(0);
   const [query, setQuery] = useState("");
   const [accountFilter, setAccountFilter] = useState<"all" | AccountStatus>("all");
+  const [accountType, setAccountType] = useState<AccountTypeFilter>("all");
   const [waitlistRole, setWaitlistRole] = useState<"all" | "business" | "creator">("all");
   const [waitlistStatus, setWaitlistStatus] = useState<"all" | WaitlistStatus>("all");
   const [waitlistCounty, setWaitlistCounty] = useState("all");
@@ -236,13 +308,47 @@ export default function AdminDashboardPage() {
   const mounted = useRef(true);
   const lock = useRef(false);
 
-  useEffect(() => watchStoredSession(() => setSession(readStoredSession())), []);
+  useEffect(() => watchSession(() => setSession(readSession())), []);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    const stored = readSession();
+    if (!stored) {
+      setSession(null);
+      setSessionExpired(false);
+      setAccountError("");
+      setAccountState("ready");
+      return () => controller.abort();
+    }
+
+    setAccountState("pending");
+    setAccountError("");
+    refreshSession(controller.signal)
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        setSession(next);
+        setSessionExpired(!next);
+        setAccountState("ready");
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (error instanceof AuthError && error.status === 401) {
+          setSession(null);
+          setSessionExpired(true);
+          setAccountState("ready");
+          return;
+        }
+        setAccountState("error");
+        setAccountError(sessionFailure(error));
+      });
+    return () => controller.abort();
+  }, [accountAttempt]);
   useEffect(() => {
     setQuery("");
     setActionNotice(null);
@@ -271,17 +377,16 @@ export default function AdminDashboardPage() {
     };
   }, [campaignStatus, campaignCounty, startsAfter, endsBefore]);
 
-  const waitlistActive = Boolean(
-    waitlistQuery.role || waitlistQuery.status || waitlistQuery.county_id || waitlistQuery.sort_by,
-  );
+  const waitlistFiltered = Boolean(waitlistQuery.role || waitlistQuery.status || waitlistQuery.county_id);
+  const waitlistActive = Boolean(waitlistFiltered || waitlistQuery.sort_by);
   const campaignActive = Boolean(
     campaignQuery.status || campaignQuery.county_id || campaignQuery.starts_after || campaignQuery.ends_before,
   );
+  const adminSession = accountState === "ready" && session?.role === "admin" ? session : null;
 
-  const sessionBlocked = isBlockedRole(session?.role);
   const data = useAdminData({
-    token: sessionBlocked ? null : session?.accessToken ?? null,
-    blocked: sessionBlocked,
+    token: preview ? null : adminSession?.accessToken ?? null,
+    enabled: adminSession != null && preview == null,
     preview,
     waitlistActive,
     waitlistQuery,
@@ -289,77 +394,38 @@ export default function AdminDashboardPage() {
     campaignQuery,
   });
 
-  const role = data.account?.role ?? session?.role ?? null;
-  const email = data.account?.email ?? session?.email ?? null;
-  const blocked = sessionBlocked || isBlockedRole(role);
-  const listsReady =
-    !blocked &&
-    data.accounts.status === "ready" &&
-    data.waitlist.status === "ready" &&
-    data.campaigns.status === "ready";
-  const canAdminister = Boolean(session?.accessToken) && !blocked && listsReady && preview == null;
+  const showData = preview != null || adminSession != null;
+  const canManageAccounts = adminSession != null && preview == null && data.accounts.status === "ready" && !busy;
+  const canManageWaitlist = adminSession != null && preview == null && data.waitlist.status === "ready" && !busy;
   const actionReason = "An administrator session is required before this change can be sent.";
-
   const waitlistSource = waitlistActive && data.waitlistView ? data.waitlistView : data.waitlist;
   const campaignSource = campaignActive && data.campaignView ? data.campaignView : data.campaigns;
-
   const countyOptions = [
     { value: "all", label: "All counties" },
     ...data.counties.map((county) => ({ value: String(county.county_id), label: county.name })),
   ];
-
-  function accessNotice(): Notice | { tone: "info"; message: string } {
-    if (preview === "loading") {
-      return { tone: "info", message: "Preview: loading state. No administrator request is in progress." };
-    }
-    if (preview === "empty") {
-      return {
-        tone: "info",
-        message: "Preview: empty administrator lists. These are not live records, and actions stay disabled.",
-      };
-    }
-    if (session && blocked) {
-      return {
-        tone: "error",
-        message: `This session is a ${roleLabel(role)} account. Administrator records stay hidden and actions stay disabled.`,
-      };
-    }
-    const apiMessage = data.accounts.message || data.refreshError;
-    const apiLine = apiMessage ? ` The API responded: ${apiMessage}` : "";
-    if (data.accounts.status === "loading") {
-      return session
-        ? { tone: "info", message: "Checking administrator access." }
-        : { tone: "info", message: "Sign in to use administrator actions. Checking the administrator API." };
-    }
-    if (!session) {
-      return {
-        tone: "error",
-        message: `Sign in with an administrator account. Actions stay disabled until that session is available.${apiLine}`,
-      };
-    }
-    if (canAdminister) {
-      const who = email ? `Signed in as ${email}. ` : "";
-      return { tone: "info", message: `${who}The administrator API accepted this session.` };
-    }
-    return { tone: "error", message: `This session cannot use administrator actions.${apiLine}` };
-  }
+  const returnPath = `${location.pathname}${location.search}`;
 
   function askAccount(account: AccountSummary, status: AccountStatus) {
-    if (!canAdminister || busy) return;
+    if (!canManageAccounts) return;
     setReviewNote("");
     setPending({ kind: "account", account, status });
   }
 
   function askWaitlist(entry: WaitlistEntry, status: WaitlistStatus) {
-    if (!canAdminister || busy) return;
+    if (!canManageWaitlist) return;
     setReviewNote("");
     setPending({ kind: "waitlist", entry, status });
   }
 
   async function commit() {
     if (lock.current || !pending) return;
-    const token = session?.accessToken;
-    if (!canAdminister || !token) {
+    const token = adminSession?.accessToken;
+    const change = pending;
+    const allowed = change.kind === "account"
+      ? data.accounts.status === "ready"
+      : data.waitlist.status === "ready";
+    if (!token || !allowed || preview) {
       setActionNotice({ tone: "error", message: actionReason });
       setPending(null);
       return;
@@ -367,7 +433,6 @@ export default function AdminDashboardPage() {
     lock.current = true;
     setBusy(true);
     setActionNotice(null);
-    const change = pending;
     try {
       if (change.kind === "account") {
         await setAccountStatus(token, change.account, change.status);
@@ -393,6 +458,11 @@ export default function AdminDashboardPage() {
       data.reload();
     } catch (error) {
       if (!mounted.current) return;
+      if (error instanceof AdminApiError && error.status === 401) {
+        clearSession();
+        setPending(null);
+        return;
+      }
       const message = error instanceof AdminApiError
         ? error.message
         : "The administrator API could not be reached.";
@@ -405,12 +475,11 @@ export default function AdminDashboardPage() {
   }
 
   function accountActions(account: AccountSummary) {
-    const disabled = !canAdminister || busy;
     return (
       <div className="flex flex-wrap gap-2">
         {account.status !== "approved" && (
           <AppButton
-            isDisabled={disabled}
+            isDisabled={!canManageAccounts}
             aria-label={`${account.status === "pending" ? "Approve" : "Set approved"} ${account.name}`}
             onPress={() => askAccount(account, "approved")}
           >
@@ -420,7 +489,7 @@ export default function AdminDashboardPage() {
         {account.status !== "suspended" && (
           <AppButton
             variant="destructive"
-            isDisabled={disabled}
+            isDisabled={!canManageAccounts}
             aria-label={`Suspend ${account.name}`}
             onPress={() => askAccount(account, "suspended")}
           >
@@ -432,7 +501,6 @@ export default function AdminDashboardPage() {
   }
 
   function waitlistActions(entry: WaitlistEntry) {
-    const disabled = !canAdminister || busy;
     const name = memberName(entry);
     const choices: Array<{ status: WaitlistStatus; label: string; variant?: "destructive" | "secondary" }> = [
       { status: "invited", label: "Invite" },
@@ -446,7 +514,7 @@ export default function AdminDashboardPage() {
           <AppButton
             key={choice.status}
             variant={choice.variant}
-            isDisabled={disabled}
+            isDisabled={!canManageWaitlist}
             aria-label={`${choice.label} ${name}`}
             onPress={() => askWaitlist(entry, choice.status)}
           >
@@ -484,17 +552,18 @@ export default function AdminDashboardPage() {
     );
   }
 
+  function accountMatches(account: AccountSummary) {
+    if (accountType !== "all" && account.account_type !== accountType) return false;
+    return matchesQuery(query, [account.name, account.account_type, String(account.account_id)]);
+  }
+
   const visibleAccounts = byName(
     (accountFilter === "all"
       ? [...data.accounts.data.pending, ...data.accounts.data.approved, ...data.accounts.data.suspended]
       : data.accounts.data[accountFilter]
-    ).filter((account) => matchesQuery(query, [account.name, account.account_type, String(account.account_id)])),
+    ).filter(accountMatches),
   );
-  const pendingAccounts = byName(
-    data.accounts.data.pending.filter((account) =>
-      matchesQuery(query, [account.name, account.account_type, String(account.account_id)]),
-    ),
-  );
+  const pendingAccounts = byName(data.accounts.data.pending.filter(accountMatches));
   const visibleMembers = waitlistSource.data.filter((entry) =>
     matchesQuery(query, [entry.name, entry.owner_name, entry.email, entry.role, entry.niche_or_category]),
   );
@@ -504,10 +573,24 @@ export default function AdminDashboardPage() {
       campaign.description,
       campaign.status,
       businessName(campaign.business_id, data.businesses),
+      deliverableSummary(campaign.deliverable_requirements),
     ]),
   );
-
-  const access = accessNotice();
+  const approvalEmpty = listEmpty("approvals", query, accountType !== "all");
+  const accountEmpty = listEmpty("accounts", query, accountFilter !== "all" || accountType !== "all");
+  const memberEmpty = listEmpty("members", query, waitlistFiltered);
+  const campaignEmpty = listEmpty("campaigns", query, campaignActive);
+  const listsSettled = data.accounts.status === "ready"
+    && data.waitlist.status === "ready"
+    && data.campaigns.status === "ready";
+  const signedIn = adminSession?.email ? `Signed in as ${adminSession.email}.` : "Signed in.";
+  const accessMessage = preview === "loading"
+    ? "Preview: loading state. No administrator request is in progress."
+    : preview === "empty"
+      ? "Preview: empty administrator lists. These are not live records, and actions stay disabled."
+      : listsSettled
+        ? `${signedIn} The administrator API accepted this session.`
+        : signedIn;
   const destructive = pending?.kind === "account"
     ? pending.status === "suspended"
     : pending?.status === "rejected";
@@ -522,8 +605,23 @@ export default function AdminDashboardPage() {
   const confirmLabel = pending?.kind === "account"
     ? pending.status === "suspended" ? "Suspend" : "Approve"
     : "Update";
+  const allLoading = data.accounts.status === "loading"
+    && data.waitlist.status === "loading"
+    && data.campaigns.status === "loading";
+  const sectionBusy = section === "overview"
+    ? data.accounts.status === "loading" || data.waitlist.status === "loading" || data.campaigns.status === "loading"
+    : section === "approvals" || section === "accounts"
+      ? data.accounts.status === "loading"
+      : section === "founding-members"
+        ? waitlistSource.status === "loading"
+        : section === "campaigns"
+          ? campaignSource.status === "loading"
+          : false;
 
-  const filtersDisabled = data.accounts.status !== "ready";
+  function waitlistCount(status: WaitlistStatus) {
+    if (data.waitlist.status !== "ready") return "-";
+    return data.waitlist.data.filter((entry) => entry.status === status).length;
+  }
 
   return (
     <div className="min-h-screen bg-[#f8f8f0] text-[var(--cg-text)]">
@@ -536,7 +634,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        <div role="main" className="min-w-0 flex-1 space-y-5" aria-busy={data.accounts.status === "loading"}>
+        <div role="main" className="min-w-0 flex-1 space-y-5" aria-busy={showData && sectionBusy}>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-[var(--cg-primary-dark)]">
@@ -549,17 +647,56 @@ export default function AdminDashboardPage() {
             <AppButton
               variant="secondary"
               onPress={data.reload}
-              isDisabled={preview != null || data.accounts.status === "loading" || data.refreshing}
+              isDisabled={!showData || preview != null || data.refreshing || allLoading}
             >
               {data.refreshing ? "Refreshing" : "Refresh"}
             </AppButton>
           </div>
 
-          <AppNotice tone={access.tone} message={access.message} />
-          {data.refreshError && !blocked && data.accounts.status === "ready" && (
-            <AppNotice tone="error" message={data.refreshError} />
+          {!showData && (
+            <div aria-live="polite" className="space-y-3">
+              {accountState === "pending" && (
+                <p className="text-sm text-[var(--cg-muted)]">Checking this account...</p>
+              )}
+              {accountState === "error" && (
+                <>
+                  <AppNotice tone="error" message={accountError || "Couldn't confirm this account."} />
+                  <AppButton variant="secondary" onPress={() => setAccountAttempt((value) => value + 1)}>
+                    Try again
+                  </AppButton>
+                </>
+              )}
+              {accountState === "ready" && !session && (
+                <>
+                  <AppNotice
+                    tone="info"
+                    message={
+                      sessionExpired
+                        ? "Your session expired. Log in with an administrator account to use the admin dashboard."
+                        : "Sign in with an administrator account to use the admin dashboard."
+                    }
+                  />
+                  <Link to="/login" state={{ from: returnPath }} className={actionLink}>
+                    Log in
+                  </Link>
+                </>
+              )}
+              {accountState === "ready" && session && session.role !== "admin" && (
+                <>
+                  <AppNotice
+                    tone="info"
+                    message={`This dashboard is for administrator accounts. You are signed in as a ${sessionRoleName(session.role)} account.`}
+                  />
+                  <Link to={dashboardPath(session.role)} className={actionLink}>
+                    Go to your dashboard
+                  </Link>
+                </>
+              )}
+            </div>
           )}
-          {actionNotice && (
+
+          {showData && <AppNotice tone="info" message={accessMessage} />}
+          {showData && actionNotice && (
             <div aria-live="polite">
               <AppNotice
                 tone={actionNotice.tone}
@@ -568,102 +705,171 @@ export default function AdminDashboardPage() {
               />
             </div>
           )}
-          {section === "overview" && (
-            !blocked && data.accounts.status === "loading" ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Loading administrator data">
-                <LoadingSkeleton />
-                <LoadingSkeleton />
-                <LoadingSkeleton />
-              </div>
-            ) : (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  <AdminStatCard
-                    label="Pending approvals"
-                    value={listsReady ? data.accounts.data.pending.length : "-"}
-                    detail={listsReady ? "Status pending" : "Not available"}
-                    icon={<ClipboardCheck size={18} aria-hidden="true" />}
-                  />
-                  <AdminStatCard
-                    label="Approved accounts"
-                    value={listsReady ? data.accounts.data.approved.length : "-"}
-                    detail={listsReady ? "Status approved" : "Not available"}
-                    icon={<BadgeCheck size={18} aria-hidden="true" />}
-                  />
-                  <AdminStatCard
-                    label="Suspended accounts"
-                    value={listsReady ? data.accounts.data.suspended.length : "-"}
-                    detail={listsReady ? "Status suspended" : "Not available"}
-                    icon={<Ban size={18} aria-hidden="true" />}
-                  />
-                  <AdminStatCard
-                    label="Founding members"
-                    value={listsReady ? data.waitlist.data.length : "-"}
-                    detail={listsReady ? "Waitlist" : "Not available"}
-                    icon={<Sparkles size={18} aria-hidden="true" />}
-                  />
-                  <AdminStatCard
-                    label="Open campaigns"
-                    value={listsReady ? data.campaigns.data.filter((campaign) => campaign.status === "open").length : "-"}
-                    detail={listsReady ? "Status open" : "Not available"}
-                    icon={<Megaphone size={18} aria-hidden="true" />}
-                  />
-                  <AdminStatCard
-                    label="All campaigns"
-                    value={listsReady ? data.campaigns.data.length : "-"}
-                    detail={listsReady ? "Administrator list" : "Not available"}
-                    icon={<LayoutDashboard size={18} aria-hidden="true" />}
-                  />
-                </div>
-                {listsReady && (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <section className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <h2 className="text-lg font-semibold">Pending approvals</h2>
-                        <Link className={textLink} to="/dashboard/admin/approvals">View approvals</Link>
-                      </div>
-                      {data.accounts.data.pending.length === 0 ? (
-                        <AdminEmptyState
-                          title="No pending accounts"
-                          description="Accounts with status pending will show up here."
-                        />
-                      ) : (
-                        byName(data.accounts.data.pending).slice(0, 3).map(renderAccount)
-                      )}
-                    </section>
-                    <section className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <h2 className="text-lg font-semibold">Founding members</h2>
-                        <Link className={textLink} to="/dashboard/admin/founding-members">View waitlist</Link>
-                      </div>
-                      {data.waitlist.data.length === 0 ? (
-                        <AdminEmptyState
-                          title="No founding members"
-                          description="The waitlist is empty."
-                        />
-                      ) : (
-                        data.waitlist.data.slice(0, 3).map(renderMember)
-                      )}
-                    </section>
-                  </div>
+
+          {showData && section === "overview" && (
+            <>
+              {data.accounts.status === "error" && <ResourceNotice message={data.accounts.message} />}
+              {data.waitlist.status === "error" && <ResourceNotice message={data.waitlist.message} />}
+              {data.campaigns.status === "error" && <ResourceNotice message={data.campaigns.message} />}
+              <ResourceNotice message={data.accountRefreshError} />
+              <ResourceNotice message={data.waitlistRefreshError} />
+              <ResourceNotice message={data.campaignRefreshError} />
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {data.accounts.status === "loading" ? (
+                  <>
+                    <LoadingSkeleton />
+                    <LoadingSkeleton />
+                    <LoadingSkeleton />
+                  </>
+                ) : (
+                  <>
+                    <AdminStatCard
+                      label="Pending approvals"
+                      value={data.accounts.status === "ready" ? data.accounts.data.pending.length : "-"}
+                      detail={data.accounts.status === "ready" ? "Status pending" : "Not available"}
+                      icon={<ClipboardCheck size={18} aria-hidden="true" />}
+                    />
+                    <AdminStatCard
+                      label="Approved accounts"
+                      value={data.accounts.status === "ready" ? data.accounts.data.approved.length : "-"}
+                      detail={data.accounts.status === "ready" ? "Status approved" : "Not available"}
+                      icon={<BadgeCheck size={18} aria-hidden="true" />}
+                    />
+                    <AdminStatCard
+                      label="Suspended accounts"
+                      value={data.accounts.status === "ready" ? data.accounts.data.suspended.length : "-"}
+                      detail={data.accounts.status === "ready" ? "Status suspended" : "Not available"}
+                      icon={<Ban size={18} aria-hidden="true" />}
+                    />
+                  </>
                 )}
-              </>
-            )
+                {data.waitlist.status === "loading" ? (
+                  <>
+                    <LoadingSkeleton />
+                    <LoadingSkeleton />
+                    <LoadingSkeleton />
+                    <LoadingSkeleton />
+                    <LoadingSkeleton />
+                  </>
+                ) : (
+                  <>
+                    <AdminStatCard
+                      label="Founding members"
+                      value={data.waitlist.status === "ready" ? data.waitlist.data.length : "-"}
+                      detail={data.waitlist.status === "ready" ? "Waitlist" : "Not available"}
+                      icon={<Sparkles size={18} aria-hidden="true" />}
+                    />
+                    <AdminStatCard
+                      label="Waiting"
+                      value={waitlistCount("waiting")}
+                      detail={data.waitlist.status === "ready" ? "Founding members" : "Not available"}
+                      icon={<Clock size={18} aria-hidden="true" />}
+                    />
+                    <AdminStatCard
+                      label="Invited"
+                      value={waitlistCount("invited")}
+                      detail={data.waitlist.status === "ready" ? "Founding members" : "Not available"}
+                      icon={<Mail size={18} aria-hidden="true" />}
+                    />
+                    <AdminStatCard
+                      label="Active"
+                      value={waitlistCount("active")}
+                      detail={data.waitlist.status === "ready" ? "Founding members" : "Not available"}
+                      icon={<BadgeCheck size={18} aria-hidden="true" />}
+                    />
+                    <AdminStatCard
+                      label="Rejected"
+                      value={waitlistCount("rejected")}
+                      detail={data.waitlist.status === "ready" ? "Founding members" : "Not available"}
+                      icon={<Ban size={18} aria-hidden="true" />}
+                    />
+                  </>
+                )}
+                {data.campaigns.status === "loading" ? (
+                  <>
+                    <LoadingSkeleton />
+                    <LoadingSkeleton />
+                  </>
+                ) : (
+                  <>
+                    <AdminStatCard
+                      label="Open campaigns"
+                      value={data.campaigns.status === "ready" ? data.campaigns.data.filter((campaign) => campaign.status === "open").length : "-"}
+                      detail={data.campaigns.status === "ready" ? "Status open" : "Not available"}
+                      icon={<Megaphone size={18} aria-hidden="true" />}
+                    />
+                    <AdminStatCard
+                      label="All campaigns"
+                      value={data.campaigns.status === "ready" ? data.campaigns.data.length : "-"}
+                      detail={data.campaigns.status === "ready" ? "Administrator list" : "Not available"}
+                      icon={<LayoutDashboard size={18} aria-hidden="true" />}
+                    />
+                  </>
+                )}
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {data.accounts.status === "ready" && (
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-lg font-semibold">Pending approvals</h2>
+                      <Link className={textLink} to="/dashboard/admin/approvals">View approvals</Link>
+                    </div>
+                    {data.accounts.data.pending.length === 0 ? (
+                      <AdminEmptyState
+                        title="No pending accounts"
+                        description="Accounts with status pending will show up here."
+                      />
+                    ) : (
+                      byName(data.accounts.data.pending).slice(0, 3).map(renderAccount)
+                    )}
+                  </section>
+                )}
+                {data.waitlist.status === "ready" && (
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-lg font-semibold">Founding members</h2>
+                      <Link className={textLink} to="/dashboard/admin/founding-members">View waitlist</Link>
+                    </div>
+                    {data.waitlist.data.length === 0 ? (
+                      <AdminEmptyState
+                        title="No founding members"
+                        description="The waitlist is empty."
+                      />
+                    ) : (
+                      data.waitlist.data.slice(0, 3).map(renderMember)
+                    )}
+                  </section>
+                )}
+              </div>
+            </>
           )}
 
-          {section === "approvals" && (
+          {showData && section === "approvals" && (
             <>
-              {!blocked && data.accounts.status === "ready" && (
-                <AppSearch label="Search approvals" value={query} onChange={setQuery} placeholder="Search name or account id" />
+              {data.accounts.status === "ready" && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <AppSelect
+                    label="Account type"
+                    value={accountType}
+                    onChange={(value) => setAccountType(value === "business" || value === "creator" ? value : "all")}
+                    options={[
+                      { value: "all", label: "All types" },
+                      { value: "business", label: "Business" },
+                      { value: "creator", label: "Creator" },
+                    ]}
+                  />
+                  <AppSearch label="Search approvals" value={query} onChange={setQuery} placeholder="Search name or account id" />
+                </div>
               )}
+              <ResourceNotice message={data.accountRefreshError} />
+              {data.accounts.status === "ready" && searchStatus(query, pendingAccounts.length, "approval", "approvals")}
               <ResourceBody
-                status={blocked ? "error" : data.accounts.status}
+                status={data.accounts.status}
                 message={data.accounts.message}
                 isEmpty={pendingAccounts.length === 0}
-                emptyTitle="No pending accounts"
-                emptyDescription="Accounts with status pending will show up here."
+                emptyTitle={approvalEmpty.title}
+                emptyDescription={approvalEmpty.description}
                 onRetry={data.reload}
-                quietError
               >
                 <div className="grid gap-3">
                   {pendingAccounts.map(renderAccount)}
@@ -672,9 +878,9 @@ export default function AdminDashboardPage() {
             </>
           )}
 
-          {section === "founding-members" && (
+          {showData && section === "founding-members" && (
             <>
-              {!blocked && data.waitlist.status === "ready" && (
+              {data.waitlist.status === "ready" && (
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <AppSelect
                     label="Role"
@@ -685,7 +891,6 @@ export default function AdminDashboardPage() {
                       { value: "creator", label: "Creator" },
                       { value: "business", label: "Business" },
                     ]}
-                    disabled={filtersDisabled}
                   />
                   <AppSelect
                     label="Status"
@@ -701,14 +906,12 @@ export default function AdminDashboardPage() {
                       { value: "active", label: "Active" },
                       { value: "rejected", label: "Rejected" },
                     ]}
-                    disabled={filtersDisabled}
                   />
                   <AppSelect
                     label="County"
                     value={waitlistCounty}
                     onChange={setWaitlistCounty}
                     options={countyOptions}
-                    disabled={filtersDisabled}
                   />
                   <AppSelect
                     label="Sort"
@@ -723,38 +926,33 @@ export default function AdminDashboardPage() {
                       { value: "status", label: "Status" },
                       { value: "county_id", label: "County" },
                     ]}
-                    disabled={filtersDisabled}
                   />
                 </div>
               )}
-              {!blocked && data.waitlist.status === "ready" && (
+              {data.waitlist.status === "ready" && (
                 <AppSearch label="Search founding members" value={query} onChange={setQuery} placeholder="Search name or email" />
               )}
+              <ResourceNotice message={data.waitlistRefreshError} />
+              {waitlistSource.status === "ready" && searchStatus(query, visibleMembers.length, "founding member", "founding members")}
               <ResourceBody
-                status={blocked ? "error" : waitlistSource.status}
+                status={waitlistSource.status}
                 message={waitlistSource.message}
                 isEmpty={visibleMembers.length === 0}
-                emptyTitle="No founding members"
-                emptyDescription="Try another filter, or the waitlist is empty."
+                emptyTitle={memberEmpty.title}
+                emptyDescription={memberEmpty.description}
                 onRetry={data.reload}
-                quietError={data.waitlist.status === "error"}
               >
                 <div className="grid gap-3">{visibleMembers.map(renderMember)}</div>
               </ResourceBody>
             </>
           )}
 
-          {section === "campaigns" && (
+          {showData && section === "campaigns" && (
             <>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <p id="campaign-status-note" className="max-w-xl text-sm text-[var(--cg-muted)]">
-                  The administrator API can list campaigns. Status changes are unavailable on that API.
-                </p>
-                <AppButton variant="secondary" isDisabled aria-describedby="campaign-status-note">
-                  Change status
-                </AppButton>
-              </div>
-              {!blocked && data.campaigns.status === "ready" && (
+              <p className="max-w-xl text-sm text-[var(--cg-muted)]">
+                The administrator API lists campaigns. It has no campaign status update.
+              </p>
+              {data.campaigns.status === "ready" && (
                 <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <AppSelect
                     label="Status"
@@ -779,20 +977,21 @@ export default function AdminDashboardPage() {
                   <DateField label="Ends before" value={endsBefore} onChange={setEndsBefore} />
                 </div>
               )}
-              {!blocked && data.campaigns.status === "ready" && (
+              {data.campaigns.status === "ready" && (
                 <AppSearch label="Search campaigns" value={query} onChange={setQuery} placeholder="Search campaign or business" />
               )}
+              <ResourceNotice message={data.campaignRefreshError} />
+              {campaignSource.status === "ready" && searchStatus(query, visibleCampaigns.length, "campaign", "campaigns")}
               <ResourceBody
-                status={blocked ? "error" : campaignSource.status}
+                status={campaignSource.status}
                 message={campaignSource.message}
                 isEmpty={visibleCampaigns.length === 0}
-                emptyTitle="No campaigns"
-                emptyDescription="Try another filter, or the administrator list is empty."
+                emptyTitle={campaignEmpty.title}
+                emptyDescription={campaignEmpty.description}
                 onRetry={data.reload}
-                quietError={data.campaigns.status === "error"}
               >
                 <>
-                  <div className="hidden overflow-x-auto rounded-2xl border border-[var(--cg-border)] bg-white md:block">
+                  <div className="hidden overflow-x-auto rounded-2xl border border-[var(--cg-border)] bg-white xl:block">
                     <table className="w-full min-w-[720px] text-left text-sm">
                       <caption className="sr-only">Administrator campaigns</caption>
                       <thead className="border-b border-[var(--cg-border)] text-[var(--cg-muted)]">
@@ -806,25 +1005,31 @@ export default function AdminDashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleCampaigns.map((campaign) => (
-                          <tr key={campaign.campaign_id} className="border-b border-[var(--cg-border)] last:border-b-0">
-                            <th className="px-4 py-3 font-semibold" scope="row">
-                              {campaign.name}
-                              {campaign.description && (
-                                <div className="mt-1 font-normal text-[var(--cg-muted)]">{campaign.description}</div>
-                              )}
-                            </th>
-                            <td className="px-4 py-3"><AdminStatusBadge status={campaign.status} /></td>
-                            <td className="px-4 py-3">{businessName(campaign.business_id, data.businesses)}</td>
-                            <td className="px-4 py-3">{offerLabel(campaign.offer_type)}</td>
-                            <td className="px-4 py-3">{formatDateRange(campaign.starts_on, campaign.ends_on)}</td>
-                            <td className="px-4 py-3">{countyList(campaign.county_ids, data.counties)}</td>
-                          </tr>
-                        ))}
+                        {visibleCampaigns.map((campaign) => {
+                          const requirements = deliverableSummary(campaign.deliverable_requirements);
+                          return (
+                            <tr key={campaign.campaign_id} className="border-b border-[var(--cg-border)] last:border-b-0">
+                              <th className="px-4 py-3 font-semibold" scope="row">
+                                {campaign.name}
+                                {campaign.description && (
+                                  <div className="mt-1 font-normal text-[var(--cg-muted)]">{campaign.description}</div>
+                                )}
+                                {requirements && (
+                                  <div className="mt-1 font-normal text-[var(--cg-muted)]">{requirements}</div>
+                                )}
+                              </th>
+                              <td className="px-4 py-3"><AdminStatusBadge status={campaign.status} /></td>
+                              <td className="px-4 py-3">{businessName(campaign.business_id, data.businesses)}</td>
+                              <td className="px-4 py-3">{offerLabel(campaign.offer_type)}</td>
+                              <td className="px-4 py-3">{formatDateRange(campaign.starts_on, campaign.ends_on)}</td>
+                              <td className="px-4 py-3">{countyList(campaign.county_ids, data.counties)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
-                  <div className="grid gap-3 md:hidden">
+                  <div className="grid gap-3 xl:hidden">
                     {visibleCampaigns.map((campaign) => (
                       <AdminCampaignRow
                         key={campaign.campaign_id}
@@ -840,10 +1045,10 @@ export default function AdminDashboardPage() {
             </>
           )}
 
-          {section === "accounts" && (
+          {showData && section === "accounts" && (
             <>
-              {!blocked && data.accounts.status === "ready" && (
-                <div className="grid gap-3 md:grid-cols-2">
+              {data.accounts.status === "ready" && (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <AppSelect
                     label="Status"
                     value={accountFilter}
@@ -857,24 +1062,35 @@ export default function AdminDashboardPage() {
                       { value: "suspended", label: "Suspended" },
                     ]}
                   />
+                  <AppSelect
+                    label="Account type"
+                    value={accountType}
+                    onChange={(value) => setAccountType(value === "business" || value === "creator" ? value : "all")}
+                    options={[
+                      { value: "all", label: "All types" },
+                      { value: "business", label: "Business" },
+                      { value: "creator", label: "Creator" },
+                    ]}
+                  />
                   <AppSearch label="Search accounts" value={query} onChange={setQuery} placeholder="Search name or account id" />
                 </div>
               )}
+              <ResourceNotice message={data.accountRefreshError} />
+              {data.accounts.status === "ready" && searchStatus(query, visibleAccounts.length, "account", "accounts")}
               <ResourceBody
-                status={blocked ? "error" : data.accounts.status}
+                status={data.accounts.status}
                 message={data.accounts.message}
                 isEmpty={visibleAccounts.length === 0}
-                emptyTitle="No accounts"
-                emptyDescription="Try another status, or the administrator list is empty."
+                emptyTitle={accountEmpty.title}
+                emptyDescription={accountEmpty.description}
                 onRetry={data.reload}
-                quietError
               >
                 <div className="grid gap-3">{visibleAccounts.map(renderAccount)}</div>
               </ResourceBody>
             </>
           )}
 
-          {section === "unknown" && (
+          {showData && section === "unknown" && (
             <AdminEmptyState
               title="This admin page is not available"
               description="Choose Overview, Approvals, Founding members, Campaigns, or Accounts."

@@ -1,5 +1,5 @@
 import type { County } from "../../api/directory";
-import type { BusinessName } from "../../api/admin";
+import type { BusinessName, DeliverableRequirement } from "../../api/admin";
 
 export function formatDate(value: string | null | undefined) {
   if (!value) return "No date";
@@ -52,6 +52,25 @@ const offerLabels: Record<string, string> = {
 export function offerLabel(value: string | null) {
   if (!value) return "No offer type";
   return offerLabels[value] ?? value;
+}
+
+const requirementLabels: Record<string, [string, string]> = {
+  post: ["Post", "Posts"],
+  story: ["Story", "Stories"],
+  reel: ["Reel", "Reels"],
+};
+
+export function deliverableSummary(requirements: DeliverableRequirement[] | undefined) {
+  if (!requirements || requirements.length === 0) return "";
+  return requirements
+    .map((requirement) => {
+      const labels = requirementLabels[requirement.deliverable_type];
+      const noun = labels
+        ? requirement.quantity === 1 ? labels[0] : labels[1]
+        : requirement.deliverable_type;
+      return `${requirement.quantity} ${noun}`;
+    })
+    .join(", ");
 }
 
 export function roleLabel(value: string | null | undefined) {
