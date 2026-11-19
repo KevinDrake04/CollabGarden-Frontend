@@ -287,6 +287,7 @@ export default function AdminDashboardPage() {
   const [accountState, setAccountState] = useState<"pending" | "ready" | "error">(() =>
     readSession() ? "pending" : "ready",
   );
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [accountError, setAccountError] = useState("");
   const [accountAttempt, setAccountAttempt] = useState(0);
   const [query, setQuery] = useState("");
@@ -319,6 +320,7 @@ export default function AdminDashboardPage() {
     const stored = readSession();
     if (!stored) {
       setSession(null);
+      setSessionExpired(false);
       setAccountError("");
       setAccountState("ready");
       return () => controller.abort();
@@ -330,6 +332,7 @@ export default function AdminDashboardPage() {
       .then((next) => {
         if (controller.signal.aborted) return;
         setSession(next);
+        setSessionExpired(!next);
         setAccountState("ready");
       })
       .catch((error: unknown) => {
@@ -337,6 +340,7 @@ export default function AdminDashboardPage() {
         if (error instanceof DOMException && error.name === "AbortError") return;
         if (error instanceof AuthError && error.status === 401) {
           setSession(null);
+          setSessionExpired(true);
           setAccountState("ready");
           return;
         }
@@ -664,7 +668,14 @@ export default function AdminDashboardPage() {
               )}
               {accountState === "ready" && !session && (
                 <>
-                  <AppNotice tone="info" message="Sign in with an administrator account to use the admin dashboard." />
+                  <AppNotice
+                    tone="info"
+                    message={
+                      sessionExpired
+                        ? "Your session expired. Log in with an administrator account to use the admin dashboard."
+                        : "Sign in with an administrator account to use the admin dashboard."
+                    }
+                  />
                   <Link to="/login" state={{ from: returnPath }} className={actionLink}>
                     Log in
                   </Link>

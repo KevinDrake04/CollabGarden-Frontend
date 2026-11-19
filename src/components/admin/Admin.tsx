@@ -42,7 +42,12 @@ export function AdminStatusBadge({ status }: { status: string }) {
   const key = status.trim().toLowerCase();
 
   return (
-    <Chip size="sm" variant="soft" color={statusColors[key] ?? "default"} className="shrink-0">
+    <Chip
+      size="sm"
+      variant="soft"
+      color={statusColors[key] ?? "default"}
+      className={key === "pending" ? "shrink-0 bg-[#f6e4c4] text-[#6d4510]" : "shrink-0"}
+    >
       {adminStatusLabel(status)}
     </Chip>
   );
