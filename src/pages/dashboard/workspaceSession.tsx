@@ -5,8 +5,11 @@ import { AppButton, AppNotice } from "../../components";
 import { AuthError } from "../../api/auth";
 import {
   dashboardPath,
+  expireSession,
   readSession,
+  readSessionExpired,
   refreshSession,
+  useExpiredSessionRedirect,
   watchSession,
   type Session,
 } from "../auth/session";
@@ -29,6 +32,7 @@ function roleName(role: Session["role"]) {
 }
 
 export function useWorkspaceSession() {
+  useExpiredSessionRedirect();
   const [session, setSession] = useState<Session | null>(() => readSession());
   const [accountState, setAccountState] = useState<"pending" | "ready" | "error">(() =>
     readSession() ? "pending" : "ready",
@@ -52,15 +56,14 @@ export function useWorkspaceSession() {
     setAccountError("");
     refreshSession(controller.signal)
       .then((next) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || !next) return;
         setSession(next);
         setAccountState("ready");
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || isAbort(error)) return;
         if (error instanceof AuthError && error.status === 401) {
-          setSession(null);
-          setAccountState("ready");
+          expireSession();
           return;
         }
         setAccountState("error");
@@ -123,6 +126,9 @@ export function WorkspaceAccess({
   signedOut: string;
 }) {
   if (!session) {
+    if (readSessionExpired()) {
+      return <p className="text-sm text-[var(--cg-muted)]">Checking this account...</p>;
+    }
     return (
       <div className="flex flex-col gap-4">
         <h1 className={titleClass}>{title}</h1>

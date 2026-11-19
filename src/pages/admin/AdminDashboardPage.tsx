@@ -60,10 +60,12 @@ import {
 } from "./format";
 import { SiteHeader } from "../auth/SiteHeader";
 import {
-  clearSession,
   dashboardPath,
+  expireSession,
   readSession,
+  readSessionExpired,
   refreshSession,
+  useExpiredSessionRedirect,
   watchSession,
   type Session,
 } from "../auth/session";
@@ -277,7 +279,6 @@ export default function AdminDashboardPage() {
   const [accountState, setAccountState] = useState<"pending" | "ready" | "error">(() =>
     readSession() ? "pending" : "ready",
   );
-  const [sessionExpired, setSessionExpired] = useState(false);
   const [accountError, setAccountError] = useState("");
   const [accountAttempt, setAccountAttempt] = useState(0);
   const [query, setQuery] = useState("");
@@ -298,6 +299,7 @@ export default function AdminDashboardPage() {
   const mounted = useRef(true);
   const lock = useRef(false);
 
+  useExpiredSessionRedirect();
   useEffect(() => watchSession(() => setSession(readSession())), []);
   useEffect(() => {
     mounted.current = true;
@@ -310,7 +312,6 @@ export default function AdminDashboardPage() {
     const stored = readSession();
     if (!stored) {
       setSession(null);
-      setSessionExpired(false);
       setAccountError("");
       setAccountState("ready");
       return () => controller.abort();
@@ -320,18 +321,15 @@ export default function AdminDashboardPage() {
     setAccountError("");
     refreshSession(controller.signal)
       .then((next) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || !next) return;
         setSession(next);
-        setSessionExpired(!next);
         setAccountState("ready");
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         if (error instanceof DOMException && error.name === "AbortError") return;
         if (error instanceof AuthError && error.status === 401) {
-          setSession(null);
-          setSessionExpired(true);
-          setAccountState("ready");
+          expireSession();
           return;
         }
         setAccountState("error");
@@ -449,7 +447,7 @@ export default function AdminDashboardPage() {
     } catch (error) {
       if (!mounted.current) return;
       if (error instanceof AdminApiError && error.status === 401) {
-        clearSession();
+        expireSession();
         setPending(null);
         return;
       }
@@ -633,7 +631,7 @@ export default function AdminDashboardPage() {
 
           {!showData && (
             <div aria-live="polite" className="space-y-3">
-              {accountState === "pending" && (
+              {(accountState === "pending" || readSessionExpired()) && (
                 <p className="text-sm text-[var(--cg-muted)]">Checking this account...</p>
               )}
               {accountState === "error" && (
@@ -644,15 +642,11 @@ export default function AdminDashboardPage() {
                   </AppButton>
                 </>
               )}
-              {accountState === "ready" && !session && (
+              {accountState === "ready" && !session && !readSessionExpired() && (
                 <>
                   <AppNotice
                     tone="info"
-                    message={
-                      sessionExpired
-                        ? "Your session expired. Log in with an administrator account to use the admin dashboard."
-                        : "Sign in with an administrator account to use the admin dashboard."
-                    }
+                    message="Sign in with an administrator account to use the admin dashboard."
                   />
                   <Link to="/login" state={{ from: returnPath }} className={actionLink}>
                     Log in

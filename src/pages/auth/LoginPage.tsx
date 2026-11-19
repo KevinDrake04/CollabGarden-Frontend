@@ -1,14 +1,20 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { InputGroup, Label, TextField } from "@heroui/react";
 import { AppButton, AppInput, AppNotice } from "../../components";
-import { AuthError, login, type AccountRole } from "../../api/auth";
-import { clearSession, dashboardPath, writeSession } from "./session";
+import { AuthError, login } from "../../api/auth";
+import {
+  clearSession,
+  pathAfterLogin,
+  readSessionExpired,
+  takeSessionExpired,
+  watchSession,
+  writeSession,
+} from "./session";
 
-function nextPath(value: unknown, role: AccountRole) {
-  if (typeof value === "string" && value.startsWith("/") && !value.startsWith("//")) return value;
-  return dashboardPath(role);
+function expiredState(state: unknown) {
+  return Boolean(state && typeof state === "object" && "expired" in state && state.expired === true);
 }
 
 export function LogoutPage() {
@@ -30,6 +36,17 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [expiredNotice, setExpiredNotice] = useState(false);
+  const closedNotice = useRef(false);
+
+  useEffect(() => {
+    const show = () => {
+      if (closedNotice.current) return;
+      if (expiredState(location.state) || readSessionExpired()) setExpiredNotice(true);
+    };
+    show();
+    return watchSession(show);
+  }, [location.state]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,7 +65,7 @@ export default function LoginPage() {
       const requested = location.state && typeof location.state === "object" && "from" in location.state
         ? location.state.from
         : null;
-      navigate(nextPath(requested, session.role), { replace: true });
+      navigate(pathAfterLogin(requested, session.role), { replace: true });
     } catch (error) {
       const fallback = "Login failed. Please try again.";
       setMessage(error instanceof AuthError || error instanceof Error ? error.message || fallback : fallback);
@@ -77,6 +94,20 @@ export default function LoginPage() {
             Welcome back
           </h1>
           <p className="mt-2 text-sm">Log in to continue with CollabGarden.</p>
+
+          {expiredNotice && (
+            <div className="mt-4">
+              <AppNotice
+                tone="info"
+                message="Your session expired. Log in to continue."
+                onClose={() => {
+                  closedNotice.current = true;
+                  takeSessionExpired();
+                  setExpiredNotice(false);
+                }}
+              />
+            </div>
+          )}
 
           <div className="mt-6 flex flex-col gap-4">
             <AppInput

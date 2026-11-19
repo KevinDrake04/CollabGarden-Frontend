@@ -14,7 +14,7 @@ import {
   type WaitlistEntry,
   type WaitlistQuery,
 } from "../../api/admin";
-import { clearSession } from "../auth/session";
+import { expireSession } from "../auth/session";
 
 export type Resource<T> = {
   status: "loading" | "ready" | "error";
@@ -128,7 +128,7 @@ export function useAdminData(input: {
       if (ignore || signal.aborted || isAbort(error) || expired) return;
       if (isUnauthorized(error)) {
         expired = true;
-        clearSession();
+        expireSession();
         return;
       }
       const message = toMessage(error);
@@ -218,7 +218,7 @@ export function useAdminData(input: {
       .catch((error: unknown) => {
         if (isAbort(error) || controller.signal.aborted) return;
         if (isUnauthorized(error)) {
-          clearSession();
+          expireSession();
           return;
         }
         setWaitlistView({ status: "error", message: toMessage(error), data: [] });
@@ -241,7 +241,7 @@ export function useAdminData(input: {
       .catch((error: unknown) => {
         if (isAbort(error) || controller.signal.aborted) return;
         if (isUnauthorized(error)) {
-          clearSession();
+          expireSession();
           return;
         }
         setCampaignView({ status: "error", message: toMessage(error), data: [] });

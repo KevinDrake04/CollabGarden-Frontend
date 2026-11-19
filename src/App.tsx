@@ -34,6 +34,7 @@ import CreatorOpportunitiesPage from "./pages/dashboard/CreatorOpportunitiesPage
 import CreatorAccountPage from "./pages/dashboard/CreatorAccountPage";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import AdminPrototypePage from "./pages/admin/AdminPrototypePage";
+import NotFoundPage from "./pages/NotFoundPage";
 
 // Shared public header. The dashboard shell adds a page width around the outlet.
 function SiteFrame({
@@ -240,7 +241,7 @@ export default function App() {
 
         <Route path="signup" element={<SignupPage />} />
 
-        <Route path="*" element={<Page title="404 — Page Not Found" />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
 
       {/* User-facing dashboards. Development previews stay under /dev/dashboard. */}

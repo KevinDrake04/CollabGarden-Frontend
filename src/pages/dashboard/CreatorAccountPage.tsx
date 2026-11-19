@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { AppAvatar } from "../../components";
 import { AuthError, fetchAccount, type AccountProfile } from "../../api/auth";
 import { countyNameForId, getCounties, getCreator, type County, type Creator } from "../../api/directory";
-import { clearSession, type Session } from "../auth/session";
+import { expireSession, type Session } from "../auth/session";
 import {
   AccountCheck,
   AccountField,
@@ -61,7 +61,7 @@ export function useCreatorGreeting(session: Session | null) {
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || isAbort(error)) return;
-        if (error instanceof AuthError && error.status === 401) clearSession();
+        if (error instanceof AuthError && error.status === 401) expireSession();
       });
     return () => controller.abort();
   }, [session]);
@@ -110,7 +110,7 @@ export default function CreatorAccountPage() {
       .catch((error: unknown) => {
         if (controller.signal.aborted || isAbort(error)) return;
         if (error instanceof AuthError && error.status === 401) {
-          clearSession();
+          expireSession();
           return;
         }
         setProfileState("ready");

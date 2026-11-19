@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { AppButton, AppNotice, LoadingSkeleton } from "../../components";
 import { AuthError, verifiedBusinessIds } from "../../api/auth";
-import { refreshSession, type Session } from "../auth/session";
+import {
+  expireSession,
+  readSessionExpired,
+  refreshSession,
+  useExpiredSessionRedirect,
+  type Session,
+} from "../auth/session";
 import { getCounties, type County } from "../../api/directory";
 import {
   CampaignApiError,
@@ -133,6 +139,7 @@ async function loadBusinessName(businessId: number, signal: AbortSignal) {
 }
 
 export default function EditCampaignPage() {
+  useExpiredSessionRedirect();
   const params = useParams();
   const campaignId = Number(params.campaignId);
   const idIsValid = Number.isInteger(campaignId) && campaignId > 0;
@@ -178,7 +185,7 @@ export default function EditCampaignPage() {
         const session = await refreshSession(controller.signal);
         if (controller.signal.aborted) return;
         if (!session) {
-          setEditor({ status: "signed-out" });
+          if (!readSessionExpired()) setEditor({ status: "signed-out" });
           return;
         }
         if (session.role !== "business") {
@@ -212,12 +219,8 @@ export default function EditCampaignPage() {
         setEditor({ status: "ready", counties, businessName, campaign });
       } catch (error) {
         if (controller.signal.aborted || isAbort(error)) return;
-        if (error instanceof CampaignApiError && error.status === 401) {
-          setEditor({ status: "signed-out" });
-          return;
-        }
-        if (error instanceof AuthError && error.status === 401) {
-          setEditor({ status: "signed-out" });
+        if ((error instanceof CampaignApiError || error instanceof AuthError) && error.status === 401) {
+          expireSession();
           return;
         }
         setEditor({ status: "error", message: loadFailure(error) });
@@ -255,7 +258,9 @@ export default function EditCampaignPage() {
       const fresh = await refreshSession(controller.signal);
       if (controller.signal.aborted) return;
       if (!fresh) {
-        setApiError("Sign in with a business account before saving or publishing.");
+        if (!readSessionExpired()) {
+          setApiError("Sign in with a business account before saving or publishing.");
+        }
         return;
       }
       if (fresh.role !== "business") {
@@ -295,16 +300,16 @@ export default function EditCampaignPage() {
       setSaved(campaign);
     } catch (error) {
       if (controller.signal.aborted || isAbort(error)) return;
+      if ((error instanceof AuthError || error instanceof CampaignApiError) && error.status === 401) {
+        expireSession();
+        return;
+      }
       if (error instanceof CampaignApiError && error.campaign?.campaign_id === existingId) {
         const kept = error.campaign;
         setEditor((editorState) => (
           editorState.status === "ready" ? { ...editorState, campaign: kept } : editorState
         ));
         setApiError(partialMessage(kept, target, error.message));
-        return;
-      }
-      if (error instanceof AuthError && error.status === 401) {
-        setApiError("Sign in with a business account before saving or publishing.");
         return;
       }
       setApiError(failureMessage(error));
@@ -359,14 +364,17 @@ export default function EditCampaignPage() {
           </div>
         )}
 
-        {idIsValid && view.status === "loading" && (
+        {idIsValid && view.status === "loading" && !readSessionExpired() && (
           <div className="mt-8 space-y-4" aria-label="Loading draft">
             <LoadingSkeleton lines={4} />
             <LoadingSkeleton lines={2} />
           </div>
         )}
 
-        {idIsValid && view.status === "signed-out" && (
+        {idIsValid && readSessionExpired() && view.status !== "ready" && (
+          <p className="mt-6 text-sm">Checking this account...</p>
+        )}
+        {idIsValid && view.status === "signed-out" && !readSessionExpired() && (
           <div className="mt-6 space-y-3">
             <AppNotice
               tone="info"

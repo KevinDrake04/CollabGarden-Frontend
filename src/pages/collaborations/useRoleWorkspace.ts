@@ -7,7 +7,14 @@ import {
   loadCollaborationWorkspace,
   type CollaborationWorkspace,
 } from "../../api/collaborations";
-import { clearSession, readSession, refreshSession, watchSession } from "../auth/session";
+import {
+  expireSession,
+  readSession,
+  readSessionExpired,
+  refreshSession,
+  useExpiredSessionRedirect,
+  watchSession,
+} from "../auth/session";
 
 export type RoleWorkspaceView =
   | { kind: "checking" }
@@ -23,7 +30,7 @@ function unauthorized(error: unknown) {
 
 export function clearSessionIfUnauthorized(error: unknown) {
   if (!unauthorized(error)) return false;
-  clearSession();
+  expireSession();
   return true;
 }
 
@@ -35,10 +42,11 @@ function failureMessage(error: unknown) {
 // Refresh the stored session, then load deliverables for the signed-in account.
 // Production pages pass enforceRole so the wrong account never reaches the workspace.
 export function useRoleWorkspace(expectedRole: "creator" | "business", enforceRole: boolean) {
+  useExpiredSessionRedirect();
   const [retry, setRetry] = useState(0);
   const [session, setSession] = useState<Session | null>(() => readSession());
   const [view, setView] = useState<RoleWorkspaceView>(() =>
-    readSession() ? { kind: "checking" } : { kind: "signed-out", expired: false },
+    readSession() ? { kind: "checking" } : { kind: "signed-out", expired: readSessionExpired() },
   );
   const [workspace, setWorkspace] = useState<CollaborationWorkspace | null>(null);
 
@@ -48,7 +56,7 @@ export function useRoleWorkspace(expectedRole: "creator" | "business", enforceRo
       setSession(next);
       if (!next) {
         setWorkspace(null);
-        setView({ kind: "signed-out", expired: false });
+        setView({ kind: "signed-out", expired: readSessionExpired() });
       }
     });
   }, []);
@@ -63,7 +71,7 @@ export function useRoleWorkspace(expectedRole: "creator" | "business", enforceRo
         if (ignore) return;
         setSession(null);
         setWorkspace(null);
-        setView({ kind: "signed-out", expired: false });
+        setView({ kind: "signed-out", expired: readSessionExpired() });
         return;
       }
 
@@ -73,6 +81,7 @@ export function useRoleWorkspace(expectedRole: "creator" | "business", enforceRo
         if (ignore) return;
         setSession(next);
         if (!next) {
+          setSession(null);
           setWorkspace(null);
           setView({ kind: "signed-out", expired: true });
           return;
@@ -90,7 +99,7 @@ export function useRoleWorkspace(expectedRole: "creator" | "business", enforceRo
       } catch (error) {
         if (ignore || controller.signal.aborted || isAbortError(error)) return;
         if (unauthorized(error)) {
-          clearSession();
+          expireSession();
           setSession(null);
           setWorkspace(null);
           setView({ kind: "signed-out", expired: true });

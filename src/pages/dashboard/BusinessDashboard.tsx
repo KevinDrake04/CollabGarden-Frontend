@@ -19,7 +19,7 @@ import {
 } from "../../api/collaborations";
 import { listCampaigns, type Campaign } from "../../api/campaigns";
 import { getBusiness, getCounties, type Business, type County } from "../../api/directory";
-import { clearSession } from "../auth/session";
+import { expireSession } from "../auth/session";
 import { DeliverableOverview } from "./DeliverableOverview";
 import { campaignNote, countyLabel, dateLabel, statusLabel } from "./businessFormat";
 import { businessSearch, BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "./selectedBusiness";
@@ -143,7 +143,7 @@ export default function BusinessDashboard() {
       .catch((error: unknown) => {
         if (controller.signal.aborted || isAbort(error)) return;
         if (error instanceof CollaborationApiError && error.status === 401) {
-          clearSession();
+          expireSession();
           setDeliverables({ status: "idle" });
           return;
         }

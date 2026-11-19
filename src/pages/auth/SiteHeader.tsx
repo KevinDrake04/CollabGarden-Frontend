@@ -84,7 +84,7 @@ export function SiteHeader() {
   useEffect(() => {
     const controller = new AbortController();
     refreshSession(controller.signal).catch(() => {
-      // A 401 clears the stored session. Other failures leave it in place.
+      // A 401 clears the stored session and marks it expired. Other failures leave it in place.
     });
     return () => controller.abort();
   }, []);

@@ -17,7 +17,7 @@ import {
 } from "../../api/collaborations";
 import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../api/campaigns";
 import { getCounties, type County } from "../../api/directory";
-import { clearSession } from "../auth/session";
+import { expireSession } from "../auth/session";
 import { DeliverableOverview } from "./DeliverableOverview";
 import { OpportunityList } from "./CreatorOpportunitiesPage";
 import { useCreatorGreeting } from "./CreatorAccountPage";
@@ -103,7 +103,7 @@ export default function CreatorDashboard() {
       .catch((error: unknown) => {
         if (controller.signal.aborted || isAbort(error)) return;
         if (error instanceof CollaborationApiError && error.status === 401) {
-          clearSession();
+          expireSession();
           setDeliverables({ status: "idle" });
           return;
         }

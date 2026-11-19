@@ -91,15 +91,15 @@ export default function BusinessReviewPage() {
         <LoadingBlock label={view.kind === "checking" ? "Checking this account..." : "Loading deliverables."} />
       )}
 
-      {view.kind === "signed-out" && (
+      {view.kind === "signed-out" && view.expired && (
+        <p className="text-sm text-[var(--cg-muted)]">Checking this account...</p>
+      )}
+
+      {view.kind === "signed-out" && !view.expired && (
         <div className="flex flex-col items-start gap-3">
           <AppNotice
             tone="info"
-            message={
-              view.expired
-                ? "Your session expired. Log in with a business account to review deliverables."
-                : "Sign in with a business account to review deliverables."
-            }
+            message="Sign in with a business account to review deliverables."
           />
           <Link to="/login" state={{ from: returnPath }} className={linkClass}>
             Log in

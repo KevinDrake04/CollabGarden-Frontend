@@ -12,7 +12,6 @@ import {
 import {
   AppNotice,
   CountyList,
-  ProfileActions,
   ProfileDetails,
   ProfileHeader,
 } from "../../components";
@@ -61,11 +60,6 @@ function BusinessProfile({
         imageUrl={business.logo_url || undefined}
         summary={category}
         emptySummary="No category listed."
-        action={
-          <ProfileActions
-            actions={[{ label: "Contact business", disabled: true, badge: "Coming soon" }]}
-          />
-        }
       >
         <div className="mt-4">
           <div className="mb-2 text-sm text-[var(--cg-muted)]">Counties</div>
