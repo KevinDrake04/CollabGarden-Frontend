@@ -3,7 +3,6 @@ import { Card, Chip } from "@heroui/react";
 import { ClipboardList } from "lucide-react";
 
 // Presentational administrator pieces. Pages pass in real or sample data.
-// DashboardStatCard is not on this branch, so counts use AdminStatCard.
 const cardClass = "rounded-2xl border border-[var(--cg-border)] bg-white p-5 text-[var(--cg-text)]";
 
 const statusLabels: Record<string, string> = {
