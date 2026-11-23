@@ -2,7 +2,10 @@
 
 // Login: POST /auth/login returns access_token and user { id, email, role }.
 // Signup: POST /auth/signup takes email, password, role, and business_name or display_name.
-// Its success body may be empty and does not start a session.
+// A successful signup body may be empty, or it may include access_token and refresh_token.
+// Tokens are read from that JSON body only. They are never written to a URL.
+// Both login and signup open a session the same way: GET /auth/me must confirm the
+// account before a Session is returned. The role on that Session comes from /auth/me.
 // The OpenAPI document leaves the login and signup response schemas untyped.
 // GET /auth/me is also untyped in OpenAPI and now returns the signed-in account:
 // id, email, role, business_id, and business_ids.
@@ -13,12 +16,19 @@ export type AccountRole = "business" | "creator" | "admin";
 
 export type Session = {
   accessToken: string;
+  refreshToken?: string;
   userId: string;
   email: string;
   role: AccountRole;
   businessId: number | null;
   businessIds: number[] | null;
 };
+
+// signed-in: signup returned a token and /auth/me confirmed the account.
+// created: the account exists, but no session could be opened from the response.
+export type SignupResult =
+  | { status: "signed-in"; session: Session }
+  | { status: "created" };
 
 export class AuthError extends Error {
   readonly status: number;
@@ -162,6 +172,41 @@ export async function fetchAccount(token: string, signal?: AbortSignal) {
   return parseAccount(body);
 }
 
+function authPayload(body: unknown) {
+  const record = isRecord(body) ? body : null;
+  const accessToken = record && typeof record.access_token === "string" ? record.access_token : "";
+  const refreshToken = record && typeof record.refresh_token === "string" ? record.refresh_token : "";
+  const user = record && isRecord(record.user) ? record.user : null;
+  const userId = user && typeof user.id === "string" ? user.id : "";
+  const email = user && typeof user.email === "string" ? user.email : "";
+  return { accessToken, refreshToken, user, userId, email };
+}
+
+// Confirm the access token with /auth/me, then build the same Session login stores.
+// A refresh token is kept only after that confirmation. It is not required.
+async function sessionFromTokens(input: {
+  accessToken: string;
+  refreshToken: string;
+  fallbackEmail: string;
+  expectedUserId: string;
+}): Promise<Session> {
+  const account = await fetchAccount(input.accessToken);
+  if (input.expectedUserId && account.id !== input.expectedUserId) {
+    throw new AuthError(200, "The account response did not match the signed-in user.");
+  }
+
+  const session: Session = {
+    accessToken: input.accessToken,
+    userId: account.id,
+    email: account.email || input.fallbackEmail,
+    role: account.role,
+    businessId: account.businessId,
+    businessIds: account.businessIds,
+  };
+  if (input.refreshToken) session.refreshToken = input.refreshToken;
+  return session;
+}
+
 export async function login(email: string, password: string): Promise<Session> {
   const response = await fetch(`${apiUrl()}/auth/login`, {
     method: "POST",
@@ -171,28 +216,17 @@ export async function login(email: string, password: string): Promise<Session> {
   const body = await readBody(response);
   if (!response.ok) throw new AuthError(response.status, errorMessage(response.status, body));
 
-  const record = isRecord(body) ? body : null;
-  const token = record && typeof record.access_token === "string" ? record.access_token : "";
-  const user = record && isRecord(record.user) ? record.user : null;
-  const userId = user && typeof user.id === "string" ? user.id : "";
-  const userEmail = user && typeof user.email === "string" ? user.email : email;
-  if (!token || !user || !userId) {
+  const parsed = authPayload(body);
+  if (!parsed.accessToken || !parsed.user || !parsed.userId) {
     throw new AuthError(response.status, "The login response did not include an access token and account.");
   }
 
-  const account = await fetchAccount(token);
-  if (account.id !== userId) {
-    throw new AuthError(200, "The account response did not match the signed-in user.");
-  }
-
-  return {
-    accessToken: token,
-    userId: account.id,
-    email: account.email || userEmail,
-    role: account.role,
-    businessId: account.businessId,
-    businessIds: account.businessIds,
-  };
+  return sessionFromTokens({
+    accessToken: parsed.accessToken,
+    refreshToken: parsed.refreshToken,
+    fallbackEmail: parsed.email || email,
+    expectedUserId: parsed.userId,
+  });
 }
 
 export async function signup(input: {
@@ -200,7 +234,7 @@ export async function signup(input: {
   password: string;
   role: "business" | "creator";
   name: string;
-}) {
+}): Promise<SignupResult> {
   const payload: {
     email: string;
     password: string;
@@ -220,6 +254,28 @@ export async function signup(input: {
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const body = await readBody(response);
+
+  let body: unknown;
+  try {
+    body = await readBody(response);
+  } catch (error) {
+    if (response.ok) return { status: "created" };
+    throw error;
+  }
   if (!response.ok) throw new AuthError(response.status, errorMessage(response.status, body));
+
+  const parsed = authPayload(body);
+  if (!parsed.accessToken) return { status: "created" };
+
+  try {
+    const session = await sessionFromTokens({
+      accessToken: parsed.accessToken,
+      refreshToken: parsed.refreshToken,
+      fallbackEmail: parsed.email || input.email,
+      expectedUserId: parsed.userId,
+    });
+    return { status: "signed-in", session };
+  } catch {
+    return { status: "created" };
+  }
 }

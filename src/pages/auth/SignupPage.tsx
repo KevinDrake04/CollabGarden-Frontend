@@ -1,5 +1,5 @@
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { FieldError, InputGroup, Label, TextField } from "@heroui/react";
 import {
@@ -15,6 +15,10 @@ import {
   RoleOptions,
   type SignupRole,
 } from "./RoleSelectModal";
+import { dashboardPath, writeSession } from "./session";
+
+const manualLoginMessage =
+  "Your account was created, but we couldn't sign you in automatically. Log in to continue.";
 
 const countyOptions = [
   "Atlantic",
@@ -103,6 +107,7 @@ function validEmail(value: string) {
 }
 
 function SignupForm({ role }: { role: SignupRole }) {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -148,18 +153,27 @@ function SignupForm({ role }: { role: SignupRole }) {
     setSubmitting(true);
     setNotice(null);
     try {
-      await signup({
+      const result = await signup({
         email: trimmedEmail,
         password,
         role,
         name: trimmedName,
       });
-      setCompleted(true);
       setPassword("");
-      setNotice({
-        tone: "success",
-        message: "Your account was created. Check your email if verification is required.",
-      });
+      if (result.status === "signed-in") {
+        try {
+          writeSession(result.session);
+        } catch {
+          setCompleted(true);
+          setNotice({ tone: "info", message: manualLoginMessage });
+          return;
+        }
+        setCompleted(true);
+        navigate(dashboardPath(result.session.role), { replace: true });
+        return;
+      }
+      setCompleted(true);
+      setNotice({ tone: "info", message: manualLoginMessage });
     } catch (error) {
       lock.current = false;
       const fallback = "Sign up failed. Please try again.";
@@ -183,15 +197,15 @@ function SignupForm({ role }: { role: SignupRole }) {
           : "Connect with businesses and discover opportunities."}{" "}
         <Link
           to="/signup"
-          aria-disabled={submitting}
-          tabIndex={submitting ? -1 : undefined}
+          aria-disabled={locked}
+          tabIndex={locked ? -1 : undefined}
           className={`font-semibold whitespace-nowrap no-underline ${
-            submitting
+            locked
               ? "pointer-events-none text-[var(--cg-muted)]"
               : "text-[var(--cg-primary-dark)]"
           }`}
           onClick={(event) => {
-            if (submitting) event.preventDefault();
+            if (locked) event.preventDefault();
           }}
         >
           Change role
