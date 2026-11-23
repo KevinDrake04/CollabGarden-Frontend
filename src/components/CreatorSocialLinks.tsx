@@ -23,6 +23,7 @@ export type CreatorSocialLinksProps = {
   links: CreatorSocialLink[];
   onChange: (links: CreatorSocialLink[]) => void;
   disabled?: boolean;
+  note?: string;
 };
 
 const platforms: {
@@ -77,7 +78,7 @@ function siteHost(url: URL) {
   return url.hostname.toLowerCase().replace(/^www\./, "");
 }
 
-function profileLinkError(platformId: SocialPlatform, value: string) {
+export function profileLinkError(platformId: SocialPlatform, value: string) {
   const platform = platformById(platformId);
   const trimmed = value.trim();
   if (!trimmed) return "Enter a profile link.";
@@ -127,6 +128,7 @@ export function CreatorSocialLinks({
   links,
   onChange,
   disabled = false,
+  note,
 }: CreatorSocialLinksProps) {
   const [editing, setEditing] = useState<SocialPlatform>("instagram");
   const [open, setOpen] = useState(false);
@@ -173,9 +175,10 @@ export function CreatorSocialLinks({
           Social media profiles
         </h2>
         <p className="mt-1 text-xs">
-          {disabled
-            ? "Social profiles are not available yet."
-            : "Optional. A saved link is not a login and does not verify the account."}
+          {note
+            ?? (disabled
+              ? "Social profiles are not available yet."
+              : "Optional. A saved link is not a login and does not verify the account.")}
         </p>
       </div>
 
@@ -311,10 +314,12 @@ export function CreatorSocialLinks({
                 )}
               </Modal.Body>
               <Modal.Footer>
-                <AppButton variant="secondary" onPress={close}>
+                <AppButton type="button" variant="secondary" onPress={close}>
                   Cancel
                 </AppButton>
-                <AppButton onPress={save}>Save</AppButton>
+                <AppButton type="button" onPress={save}>
+                  Save
+                </AppButton>
               </Modal.Footer>
             </Modal.Dialog>
           </Modal.Container>
