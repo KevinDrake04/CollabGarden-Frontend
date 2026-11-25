@@ -8,6 +8,7 @@ export * from "./marketplace/Cards";
 export * from "./profile/Profile";
 export * from "./profile/CreatorProfileLinks";
 export * from "./CreatorSocialLinks";
+export * from "./LegalConsent";
 export * from "./dashboard/Dashboard";
 export * from "./deliverables/Deliverables";
 export * from "./admin/Admin";

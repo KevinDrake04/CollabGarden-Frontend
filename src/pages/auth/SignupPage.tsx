@@ -113,6 +113,7 @@ function SignupForm({ role }: { role: SignupRole }) {
   const [name, setName] = useState("");
   const [countyId, setCountyId] = useState("");
   const [links, setLinks] = useState<CreatorSocialLink[]>([]);
+  const [agreed, setAgreed] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -234,9 +235,11 @@ function SignupForm({ role }: { role: SignupRole }) {
           name={name}
           countyId={countyId}
           links={links}
+          agreed={agreed}
           onNameChange={setName}
           onCountyChange={setCountyId}
           onLinksChange={setLinks}
+          onAgreedChange={setAgreed}
           submitting={submitting}
           errorMessage={submitError}
           onSubmit={onProfileComplete}

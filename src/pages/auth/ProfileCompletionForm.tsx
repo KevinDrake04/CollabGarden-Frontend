@@ -4,6 +4,8 @@ import {
   AppNotice,
   AppSelect,
   CreatorSocialLinks,
+  LegalConsent,
+  legalConsentRequiredMessage,
   type CreatorSocialLink,
 } from "../../components";
 import type { County } from "../../api/directory";
@@ -32,9 +34,11 @@ type ProfileCompletionFormProps = {
   name: string;
   countyId: string;
   links: CreatorSocialLink[];
+  agreed: boolean;
   onNameChange: (name: string) => void;
   onCountyChange: (countyId: string) => void;
   onLinksChange: (links: CreatorSocialLink[]) => void;
+  onAgreedChange: (agreed: boolean) => void;
   submitting?: boolean;
   errorMessage?: string;
   onSubmit: (profile: CompletedProfile) => void;
@@ -48,9 +52,11 @@ export function ProfileCompletionForm({
   name,
   countyId,
   links,
+  agreed,
   onNameChange,
   onCountyChange,
   onLinksChange,
+  onAgreedChange,
   submitting = false,
   errorMessage = "",
   onSubmit,
@@ -59,6 +65,7 @@ export function ProfileCompletionForm({
   const isBusiness = role === "business";
   const [nameError, setNameError] = useState("");
   const [socialError, setSocialError] = useState("");
+  const [consentError, setConsentError] = useState("");
 
   function finish(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,9 +79,11 @@ export function ProfileCompletionForm({
     const social = isBusiness
       ? { error: "", links: [] as SignupSocialLink[] }
       : collectCreatorLinks(links);
+    const nextConsentError = agreed ? "" : legalConsentRequiredMessage;
     setNameError(nextNameError);
     setSocialError(social.error);
-    if (nextNameError || social.error) return;
+    setConsentError(nextConsentError);
+    if (nextNameError || social.error || nextConsentError) return;
 
     const selectedCounty = counties.find((county) => String(county.county_id) === countyId);
     onSubmit({
@@ -139,6 +148,15 @@ export function ProfileCompletionForm({
       <p className="m-0 text-sm text-[var(--cg-muted)]">
         Profiles need approval before they appear in the public directory.
       </p>
+      <LegalConsent
+        checked={agreed}
+        disabled={submitting}
+        error={consentError}
+        onChange={(value) => {
+          onAgreedChange(value);
+          if (value) setConsentError("");
+        }}
+      />
       {errorMessage && <AppNotice tone="error" message={errorMessage} />}
       {children}
     </form>

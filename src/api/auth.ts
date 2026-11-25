@@ -5,6 +5,8 @@
 // county_id is optional for both roles. Creators can also send social_links
 // for instagram, tiktok, youtube, facebook, x, and website.
 // Business requests do not include social_links.
+// The development SignupRequest has no consent or agreement field. The
+// registration checkbox is enforced in the form and is not sent or stored.
 // A successful signup body may be empty, or it may include access_token and refresh_token.
 // Tokens are read from that JSON body only. They are never written to a URL.
 // Both login and signup open a session the same way: GET /auth/me must confirm the
