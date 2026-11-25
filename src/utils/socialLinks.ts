@@ -1,19 +1,16 @@
-// Creator signup stores one http(s) profile URL per platform.
-// Handles are saved as https URLs. The API accepts instagram, tiktok, youtube,
-// facebook, x, and website, and rejects a URL over 500 characters or without http(s).
+// One http(s) profile URL per platform. Handles are saved as https URLs.
+// The API accepts instagram, tiktok, youtube, facebook, x, and website, and
+// rejects a URL over 500 characters or without http(s).
 // At least one of Instagram, TikTok, YouTube, or Facebook is required.
 // X and Website are optional and do not satisfy that requirement.
 
-export const primaryPlatformIds = ["instagram", "tiktok", "youtube", "facebook"] as const;
-export const additionalPlatformIds = ["x", "website"] as const;
-export const socialPlatformIds = [...primaryPlatformIds, ...additionalPlatformIds] as const;
+const primaryPlatformIds = ["instagram", "tiktok", "youtube", "facebook"] as const;
+const additionalPlatformIds = ["x", "website"] as const;
+const socialPlatformIds = [...primaryPlatformIds, ...additionalPlatformIds] as const;
 
-export type PrimaryPlatformId = (typeof primaryPlatformIds)[number];
-export type AdditionalPlatformId = (typeof additionalPlatformIds)[number];
+type PrimaryPlatformId = (typeof primaryPlatformIds)[number];
+type AdditionalPlatformId = (typeof additionalPlatformIds)[number];
 export type SocialPlatformId = (typeof socialPlatformIds)[number];
-export type SignupPlatformId = PrimaryPlatformId;
-
-export type SignupSocialValues = Record<PrimaryPlatformId, string>;
 
 export type SignupSocialLink = {
   platform: SocialPlatformId;
@@ -137,19 +134,9 @@ export const socialPlatforms: PlatformDefinition[] = [
   ...additionalPlatforms,
 ];
 
-// Kept for the original four-field validator. Signup now edits a link list.
-export const signupPlatforms = primaryPlatforms;
+const atLeastOneSocialMessage = "Add at least one link to continue";
 
-export const emptySignupSocial: SignupSocialValues = {
-  instagram: "",
-  tiktok: "",
-  youtube: "",
-  facebook: "",
-};
-
-export const atLeastOneSocialMessage = "Add at least one link to continue";
-
-export const primarySocialMessage =
+const primarySocialMessage =
   "Add an Instagram, TikTok, YouTube, or Facebook link to continue";
 
 const maxUrlLength = 500;
@@ -161,10 +148,6 @@ const socialPlatformIdSet = new Set<string>(socialPlatformIds);
 
 export function isSocialPlatform(platform: string): platform is SocialPlatformId {
   return socialPlatformIdSet.has(platform);
-}
-
-export function isSignupPlatform(platform: string): platform is SocialPlatformId {
-  return isSocialPlatform(platform);
 }
 
 function platformById(id: SocialPlatformId) {
@@ -262,49 +245,6 @@ export function acceptSocialLink(
   if (result.status === "ok") return { url: result.url };
   if (result.status === "error") return { error: result.error };
   return { error: linkError(platformById(platformId)) };
-}
-
-export function validateSignupSocial(values: SignupSocialValues) {
-  const errors: SignupSocialValues = { ...emptySignupSocial };
-  const links: SignupSocialLink[] = [];
-  let filled = 0;
-
-  for (const platform of primaryPlatforms) {
-    const result = readSignupLink(platform.id, values[platform.id]);
-    if (result.status === "empty") continue;
-    filled += 1;
-    if (result.status === "error") {
-      errors[platform.id] = result.error;
-      continue;
-    }
-    links.push({ platform: platform.id, url: result.url });
-  }
-
-  return {
-    errors,
-    links,
-    groupError: filled === 0 ? atLeastOneSocialMessage : "",
-  };
-}
-
-// One link per platform. Passing a URL replaces that platform. Null removes it.
-export function replaceSocialLink(
-  links: readonly { platform: string; url: string }[],
-  platform: SocialPlatformId,
-  url: string | null,
-) {
-  const saved = new Map<SocialPlatformId, string>();
-  for (const link of links) {
-    if (!isSocialPlatform(link.platform) || saved.has(link.platform)) continue;
-    if (!link.url.trim()) continue;
-    saved.set(link.platform, link.url);
-  }
-  if (url?.trim()) saved.set(platform, url.trim());
-  else saved.delete(platform);
-
-  return socialPlatforms
-    .filter((item) => saved.has(item.id))
-    .map((item) => ({ platform: item.id, url: saved.get(item.id) ?? "" }));
 }
 
 // Links already saved from the profile editor. X and Website are kept,

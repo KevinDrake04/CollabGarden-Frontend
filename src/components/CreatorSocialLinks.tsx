@@ -7,7 +7,7 @@ import {
   socialLinkSummary,
   socialPlatforms,
   type SocialPlatformId,
-} from "../pages/auth/signupSocial";
+} from "../utils/socialLinks";
 import { AppButton } from "./ui/Buttons";
 import { AppInput, AppSelect } from "./ui/Fields";
 
@@ -218,20 +218,20 @@ export function CreatorSocialLinks({
 
   function renderField(platform: SocialPlatformDefinition) {
     return (
-      <div id={`social-field-${platform.id}`} key={platform.id} className="scroll-mt-2">
+      <div id={`social-field-${platform.id}`} key={platform.id} className="relative scroll-mt-2">
+        <button
+          type="button"
+          className="absolute top-0 right-0 z-10 flex h-5 items-center cursor-pointer text-xs font-medium text-[var(--cg-error)] disabled:cursor-not-allowed"
+          onClick={() => removeField(platform.id)}
+          disabled={disabled}
+        >
+          Remove
+        </button>
         <AppInput
           label={
-            <span className="flex w-full items-center gap-2">
+            <span className="flex items-center gap-2 pr-16">
               <PlatformMark platform={platform} disabled={disabled} />
               <span className="min-w-0">{platform.inputLabel}</span>
-              <button
-                type="button"
-                className="ml-auto shrink-0 cursor-pointer text-xs font-medium text-[var(--cg-error)] disabled:cursor-not-allowed"
-                onClick={() => removeField(platform.id)}
-                disabled={disabled}
-              >
-                Remove
-              </button>
             </span>
           }
           name={platform.id}
@@ -262,21 +262,27 @@ export function CreatorSocialLinks({
         )}
       </div>
 
-      <div
-        className="grid grid-cols-2 gap-2"
-        role="group"
-        aria-label="Social media profiles"
-        aria-disabled={disabled}
-      >
-        {primaryPlatforms.map((platform) => (
-          <ProfileChoice
-            key={platform.id}
-            platform={platform}
-            url={savedUrl(links, platform.id)}
-            disabled={disabled}
-            onPress={() => openModal(platform.id)}
-          />
-        ))}
+      <div className="flex flex-col gap-1.5">
+        <div
+          className="grid grid-cols-2 gap-2"
+          role="group"
+          aria-label="Social media profiles"
+          aria-describedby="social-primary-requirement"
+          aria-disabled={disabled}
+        >
+          {primaryPlatforms.map((platform) => (
+            <ProfileChoice
+              key={platform.id}
+              platform={platform}
+              url={savedUrl(links, platform.id)}
+              disabled={disabled}
+              onPress={() => openModal(platform.id)}
+            />
+          ))}
+        </div>
+        <p id="social-primary-requirement" className="m-0 text-xs text-[var(--cg-muted)]">
+          At least one of Instagram, TikTok, YouTube, or Facebook is required.
+        </p>
       </div>
 
       {savedExtras.length > 0 && (

@@ -11,7 +11,7 @@ import type { SignupRole } from "./RoleSelectModal";
 import {
   collectCreatorLinks,
   type SignupSocialLink,
-} from "./signupSocial";
+} from "../../utils/socialLinks";
 
 export type ProfileCompletionInput = {
   name?: string;

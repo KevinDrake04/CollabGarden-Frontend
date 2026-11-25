@@ -15,7 +15,7 @@
 // Creators receive null business identifiers. role is "business", "creator", or "admin".
 // The browser copy of this session lives in src/pages/auth/session.ts.
 
-import { isSocialPlatform, type SignupSocialLink } from "../pages/auth/signupSocial";
+import { isSocialPlatform, type SignupSocialLink } from "../utils/socialLinks";
 
 export type { SignupSocialLink };
 

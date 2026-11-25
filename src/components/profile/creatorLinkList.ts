@@ -1,7 +1,7 @@
 // Public profile links. Unknown, empty, and non-http(s) values are left out
 // so older creators with no social_links still render the same profile.
 
-import { socialPlatforms, type SocialPlatformId } from "../../pages/auth/signupSocial";
+import { socialPlatforms, type SocialPlatformId } from "../../utils/socialLinks";
 
 export type CreatorLinkInput = {
   platform?: string | null;
