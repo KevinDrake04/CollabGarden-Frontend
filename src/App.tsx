@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router";
+import { SiteFooter } from "./components/SiteFooter";
 import { DevLayout, PlaceholderPage } from "./pages/dev/DevLayout";
 import ComponentGallery from "./pages/dev/ComponentGallery";
 import "./styles/collabgarden-ui.css";
@@ -23,6 +24,8 @@ import CreatorAccountPage from "./pages/dashboard/creator/CreatorAccountPage";
 import CreatorDeliverablesPage from "./pages/dashboard/creator/CreatorDeliverablesPage";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import TermsPage from "./pages/legal/TermsPage";
+import PrivacyPage from "./pages/legal/PrivacyPage";
 import { dashboardPath, readSession } from "./pages/auth/session";
 
 function SiteFrame({
@@ -35,21 +38,24 @@ function SiteFrame({
   children: ReactNode;
 }) {
   return (
-    <div className={className}>
+    <div className={["flex min-h-dvh flex-col", className].filter(Boolean).join(" ")}>
       <SiteHeader />
-      <main className={mainClassName}>{children}</main>
+      <main className={["flex flex-1 flex-col", mainClassName].filter(Boolean).join(" ")}>
+        {children}
+      </main>
+      <SiteFooter />
     </div>
   );
 }
 
 function PublicLayout() {
   const { pathname } = useLocation();
-  const landing = pathname === "/";
+  const fullBleed = pathname === "/" || pathname === "/terms" || pathname === "/privacy";
 
   return (
     <SiteFrame
-      className={landing ? "min-h-screen bg-[#f8f8f0]" : undefined}
-      mainClassName={landing ? "landing-main" : undefined}
+      className="bg-[#f8f8f0]"
+      mainClassName={fullBleed ? "landing-main" : undefined}
     >
       <Outlet />
     </SiteFrame>
@@ -129,6 +135,8 @@ export default function App() {
         <Route path="login" element={<LoginPage />} />
         <Route path="logout" element={<LogoutPage />} />
         <Route path="signup" element={<SignupPage />} />
+        <Route path="terms" element={<TermsPage />} />
+        <Route path="privacy" element={<PrivacyPage />} />
         {/* Static routes such as /dashboard and /dev rank above this catch-all. */}
         <Route path="*" element={<NotFoundPage />} />
       </Route>

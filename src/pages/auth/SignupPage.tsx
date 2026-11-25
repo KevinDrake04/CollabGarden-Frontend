@@ -46,7 +46,7 @@ const cardClass =
 function AuthFrame({ children }: { children: ReactNode }) {
   // Cancel the default page padding so this screen can use the landing page background.
   return (
-    <div className="-m-12 min-h-[calc(100dvh-4.5rem)] bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-my-8">
+    <div className="-mx-12 -mt-12 flex-1 bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-mt-8">
       <div className="mx-auto grid w-full max-w-6xl items-center gap-8 px-4 py-10 md:grid-cols-2 md:gap-12 md:px-8 md:py-14">
         <div className="hidden overflow-hidden rounded-2xl md:block">
           <img
