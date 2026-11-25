@@ -6,6 +6,7 @@ export * from "./navigation/Navigation";
 export * from "./feedback/Feedback";
 export * from "./marketplace/Cards";
 export * from "./profile/Profile";
+export * from "./profile/CreatorProfileLinks";
 export * from "./CreatorSocialLinks";
 export * from "./dashboard/Dashboard";
 export * from "./deliverables/Deliverables";

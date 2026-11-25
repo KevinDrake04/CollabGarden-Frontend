@@ -13,6 +13,7 @@ import {
 import {
   AppNotice,
   CountyList,
+  CreatorProfileLinks,
   ProfileDetails,
   ProfileHeader,
 } from "../../components";
@@ -84,6 +85,7 @@ function CreatorProfile({
             {followerRange || "Not listed"}
           </span>
         </div>
+        <CreatorProfileLinks links={creator.social_links} />
       </ProfileHeader>
 
       <ProfileDetails title="About" text={bio} emptyLabel="No bio yet." />

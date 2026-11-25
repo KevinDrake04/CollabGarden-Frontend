@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { FieldError, InputGroup, Label, TextField } from "@heroui/react";
@@ -6,43 +6,23 @@ import {
   AppButton,
   AppInput,
   AppNotice,
-  AppSelect,
-  CreatorSocialLinks,
 } from "../../components";
 import { AuthError, signup } from "../../api/auth";
+import { getCounties, type County } from "../../api/directory";
 import {
   parseSignupRole,
   RoleOptions,
   type SignupRole,
 } from "./RoleSelectModal";
+import {
+  ProfileCompletionForm,
+  type CompletedProfile,
+} from "./ProfileCompletionForm";
+import type { CreatorSocialLink } from "../../components";
 import { dashboardPath, writeSession } from "./session";
 
 const manualLoginMessage =
   "Your account was created, but we couldn't sign you in automatically. Log in to continue.";
-
-const countyOptions = [
-  "Atlantic",
-  "Bergen",
-  "Burlington",
-  "Camden",
-  "Cape May",
-  "Cumberland",
-  "Essex",
-  "Gloucester",
-  "Hudson",
-  "Hunterdon",
-  "Mercer",
-  "Middlesex",
-  "Monmouth",
-  "Morris",
-  "Ocean",
-  "Passaic",
-  "Salem",
-  "Somerset",
-  "Sussex",
-  "Union",
-  "Warren",
-].map((county) => ({ value: county, label: county }));
 
 const cardClass =
   "rounded-2xl border border-[var(--cg-border)] bg-white p-6 shadow-sm md:p-8";
@@ -102,6 +82,22 @@ function RolePrompt({
   );
 }
 
+function StepMarks({ step }: { step: 1 | 2 }) {
+  return (
+    <div className="mb-4 flex items-center gap-2" aria-label={`Step ${step} of 2`}>
+      {[1, 2].map((item) => (
+        <span
+          key={item}
+          aria-hidden="true"
+          className={`h-1 w-8 rounded-full ${
+            item <= step ? "bg-[var(--cg-primary)]" : "bg-[var(--cg-border)]"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
 function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
@@ -109,12 +105,17 @@ function validEmail(value: string) {
 function SignupForm({ role }: { role: SignupRole }) {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [counties, setCounties] = useState<County[]>([]);
+  const [countyState, setCountyState] = useState<"loading" | "ready" | "error">("loading");
+  const [step, setStep] = useState<1 | 2>(1);
+  const [name, setName] = useState("");
+  const [countyId, setCountyId] = useState("");
+  const [links, setLinks] = useState<CreatorSocialLink[]>([]);
   const [emailError, setEmailError] = useState("");
-  const [nameError, setNameError] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [notice, setNotice] = useState<{
     tone: "success" | "error" | "info";
     message: string;
@@ -125,46 +126,72 @@ function SignupForm({ role }: { role: SignupRole }) {
   const isBusiness = role === "business";
   const locked = submitting || completed;
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (lock.current) return;
+  useEffect(() => {
+    const controller = new AbortController();
+    getCounties(controller.signal)
+      .then((list) => {
+        if (controller.signal.aborted) return;
+        setCounties(list);
+        setCountyState("ready");
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setCountyState("error");
+      });
+    return () => controller.abort();
+  }, []);
 
-    const trimmedEmail = email.trim();
-    const trimmedName = name.trim();
-    const nextEmailError = validEmail(trimmedEmail) ? "" : "Enter a valid email address.";
-    const nextNameError = trimmedName
-      ? ""
-      : isBusiness
-        ? "Enter your business name."
-        : "Enter your display name.";
+  function onContinue(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (lock.current || locked) return;
+
+    const nextEmailError = validEmail(email.trim()) ? "" : "Enter a valid email address.";
     const nextPasswordError = password.length >= 6
       ? ""
       : "Use at least 6 characters for your password.";
-
     setEmailError(nextEmailError);
-    setNameError(nextNameError);
     setPasswordError(nextPasswordError);
-    if (nextEmailError || nextNameError || nextPasswordError) {
+    if (nextEmailError || nextPasswordError) {
       setNotice(null);
       return;
     }
+    setSubmitError("");
+    setNotice(null);
+    setStep(2);
+  }
 
+  async function onProfileComplete(profile: CompletedProfile) {
+    if (lock.current) return;
     lock.current = true;
     setSubmitting(true);
+    setSubmitError("");
     setNotice(null);
     try {
-      const result = await signup({
-        email: trimmedEmail,
-        password,
-        role,
-        name: trimmedName,
-      });
+      const result = await signup(
+        isBusiness
+          ? {
+              email: email.trim(),
+              password,
+              role: "business",
+              name: profile.name,
+              countyId: profile.countyId,
+            }
+          : {
+              email: email.trim(),
+              password,
+              role: "creator",
+              name: profile.name,
+              countyId: profile.countyId,
+              socialLinks: profile.socialLinks,
+            },
+      );
       setPassword("");
       if (result.status === "signed-in") {
         try {
           writeSession(result.session);
         } catch {
           setCompleted(true);
+          setStep(1);
           setNotice({ tone: "info", message: manualLoginMessage });
           return;
         }
@@ -173,6 +200,7 @@ function SignupForm({ role }: { role: SignupRole }) {
         return;
       }
       setCompleted(true);
+      setStep(1);
       setNotice({ tone: "info", message: manualLoginMessage });
     } catch (error) {
       lock.current = false;
@@ -180,21 +208,70 @@ function SignupForm({ role }: { role: SignupRole }) {
       const message = error instanceof AuthError || error instanceof Error
         ? error.message || fallback
         : fallback;
-      setNotice({ tone: "error", message });
+      setSubmitError(message);
     } finally {
       setSubmitting(false);
     }
   }
 
+  const heading = isBusiness ? "Join as a business" : "Join as a creator";
+  const summary = isBusiness
+    ? "Find and collaborate with local creators."
+    : "Connect with businesses and discover opportunities.";
+
+  if (step === 2) {
+    return (
+      <div className={cardClass}>
+        <StepMarks step={2} />
+        <h1 className="font-bold tracking-tight text-[var(--cg-primary-dark)]">
+          {heading}
+        </h1>
+        <p className="mt-2 text-sm">{summary}</p>
+        <ProfileCompletionForm
+          role={role}
+          counties={counties}
+          countyState={countyState}
+          name={name}
+          countyId={countyId}
+          links={links}
+          onNameChange={setName}
+          onCountyChange={setCountyId}
+          onLinksChange={setLinks}
+          submitting={submitting}
+          errorMessage={submitError}
+          onSubmit={onProfileComplete}
+        >
+          <div className="flex gap-3">
+            <AppButton
+              type="button"
+              variant="secondary"
+              className="border border-[var(--cg-border)] bg-white"
+              onPress={() => {
+                if (submitting) return;
+                setSubmitError("");
+                setStep(1);
+              }}
+              isDisabled={submitting}
+            >
+              Back
+            </AppButton>
+            <AppButton type="submit" className="flex-1" isDisabled={submitting}>
+              {submitting ? "Creating account..." : "Create account"}
+            </AppButton>
+          </div>
+        </ProfileCompletionForm>
+      </div>
+    );
+  }
+
   return (
-    <form noValidate onSubmit={onSubmit} className={cardClass}>
+    <form noValidate onSubmit={onContinue} className={cardClass}>
+      <StepMarks step={1} />
       <h1 className="font-bold tracking-tight text-[var(--cg-primary-dark)]">
-        {isBusiness ? "Join as a business" : "Join as a creator"}
+        {heading}
       </h1>
       <p className="mt-2 text-sm">
-        {isBusiness
-          ? "Find and collaborate with local creators."
-          : "Connect with businesses and discover opportunities."}{" "}
+        {summary}{" "}
         <Link
           to="/signup"
           aria-disabled={locked}
@@ -271,37 +348,7 @@ function SignupForm({ role }: { role: SignupRole }) {
           )}
         </TextField>
 
-        <AppSelect
-          label="County"
-          name="county"
-          options={countyOptions}
-          placeholder="Select a county"
-          disabled
-          helper="County selection is not available yet."
-        />
-
-        <AppInput
-          label={isBusiness ? "Business Name" : "Display Name"}
-          name={isBusiness ? "businessName" : "displayName"}
-          placeholder={isBusiness ? "Garden Cafe" : "Alex Rivera"}
-          value={name}
-          onChange={(value) => {
-            setName(value);
-            setNameError("");
-          }}
-          error={nameError}
-          disabled={locked}
-          required
-        />
-
-        {!isBusiness && (
-          <CreatorSocialLinks links={[]} onChange={() => {}} disabled />
-        )}
       </div>
-
-      <p className="mt-4 text-sm text-[var(--cg-muted)]">
-        Profiles need approval before they appear in the public directory.
-      </p>
 
       {notice && (
         <div className="mt-4">
@@ -314,7 +361,7 @@ function SignupForm({ role }: { role: SignupRole }) {
       )}
 
       <AppButton type="submit" className="mt-6 w-full" isDisabled={locked}>
-        {submitting ? "Signing up..." : "Sign up"}
+        Continue
       </AppButton>
 
       <div className="mt-4 flex items-center gap-3 text-xs text-[var(--cg-muted)]">

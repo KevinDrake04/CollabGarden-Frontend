@@ -2,6 +2,9 @@
 
 // Login: POST /auth/login returns access_token and user { id, email, role }.
 // Signup: POST /auth/signup takes email, password, role, and business_name or display_name.
+// county_id is optional for both roles. Creators can also send social_links
+// for instagram, tiktok, youtube, facebook, x, and website.
+// Business requests do not include social_links.
 // A successful signup body may be empty, or it may include access_token and refresh_token.
 // Tokens are read from that JSON body only. They are never written to a URL.
 // Both login and signup open a session the same way: GET /auth/me must confirm the
@@ -11,6 +14,10 @@
 // id, email, role, business_id, and business_ids.
 // Creators receive null business identifiers. role is "business", "creator", or "admin".
 // The browser copy of this session lives in src/pages/auth/session.ts.
+
+import { isSocialPlatform, type SignupSocialLink } from "../pages/auth/signupSocial";
+
+export type { SignupSocialLink };
 
 export type AccountRole = "business" | "creator" | "admin";
 
@@ -229,30 +236,61 @@ export async function login(email: string, password: string): Promise<Session> {
   });
 }
 
-export async function signup(input: {
+export type SignupInput = {
+  email: string;
+  password: string;
+  name: string;
+  countyId?: number | null;
+} & (
+  | { role: "business" }
+  | { role: "creator"; socialLinks: SignupSocialLink[] }
+);
+
+export type SignupBody = {
   email: string;
   password: string;
   role: "business" | "creator";
-  name: string;
-}): Promise<SignupResult> {
-  const payload: {
-    email: string;
-    password: string;
-    role: "business" | "creator";
-    business_name?: string;
-    display_name?: string;
-  } = {
+  business_name?: string;
+  display_name?: string;
+  county_id?: number;
+  social_links?: SignupSocialLink[];
+};
+
+// One link per platform. Business registrations never include social_links.
+export function signupRequestBody(input: SignupInput): SignupBody {
+  const body: SignupBody = {
     email: input.email,
     password: input.password,
     role: input.role,
   };
-  if (input.role === "business") payload.business_name = input.name;
-  else payload.display_name = input.name;
 
+  if (input.role === "business") {
+    body.business_name = input.name;
+  } else {
+    body.display_name = input.name;
+    const seen = new Set<string>();
+    const links: SignupSocialLink[] = [];
+    for (const link of input.socialLinks) {
+      const url = link.url.trim();
+      if (!url || seen.has(link.platform) || !isSocialPlatform(link.platform)) continue;
+      seen.add(link.platform);
+      links.push({ platform: link.platform, url });
+    }
+    body.social_links = links;
+  }
+
+  if (typeof input.countyId === "number" && Number.isInteger(input.countyId) && input.countyId > 0) {
+    body.county_id = input.countyId;
+  }
+
+  return body;
+}
+
+export async function signup(input: SignupInput): Promise<SignupResult> {
   const response = await fetch(`${apiUrl()}/auth/signup`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(signupRequestBody(input)),
   });
 
   let body: unknown;

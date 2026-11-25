@@ -1,4 +1,4 @@
-import { type HTMLInputTypeAttribute } from "react";
+import { type HTMLInputTypeAttribute, type ReactNode } from "react";
 import {
   Description,
   FieldError,
@@ -13,7 +13,7 @@ import {
 import { ChevronDown, Search } from "lucide-react";
 
 export interface FieldProps {
-  label: string;
+  label: ReactNode;
   name?: string;
   value?: string;
   defaultValue?: string;
