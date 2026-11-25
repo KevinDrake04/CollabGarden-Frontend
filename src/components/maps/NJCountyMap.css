@@ -1,0 +1,47 @@
+.nj-county-map {
+  touch-action: manipulation;
+}
+
+.nj-county-map .nj-county {
+  fill: var(--cg-surface);
+  stroke: var(--cg-primary);
+  stroke-width: 1.25px;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: fill 120ms ease;
+}
+
+.nj-county-map .nj-county:hover {
+  fill: var(--cg-accent);
+  stroke: var(--cg-primary-dark);
+}
+
+.nj-county-map .nj-county:focus-visible {
+  fill: var(--cg-background);
+  stroke: var(--cg-primary-dark);
+  stroke-width: 3.5px;
+}
+
+.nj-county-map .nj-county[aria-pressed="true"] {
+  fill: var(--cg-primary);
+  stroke: var(--cg-primary-dark);
+}
+
+.nj-county-map .nj-county[aria-pressed="true"]:hover {
+  fill: var(--cg-primary-dark);
+  stroke: var(--cg-text);
+}
+
+.nj-county-map .nj-county[aria-pressed="true"]:focus-visible {
+  fill: var(--cg-primary);
+  stroke: var(--cg-warning);
+  stroke-width: 3.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nj-county-map .nj-county {
+    transition: none;
+  }
+}

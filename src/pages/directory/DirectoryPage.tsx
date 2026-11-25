@@ -21,6 +21,7 @@ import {
   type DirectoryEntry,
   type DirectoryType,
 } from "../../api/directory";
+import { NJCountyMap } from "../../components/maps/NJCountyMap";
 import CountyFilter from "./CountyFilter";
 
 type Filters = {
@@ -54,6 +55,20 @@ function writeFilterParams(filters: Filters, current: URLSearchParams) {
   if (filters.query) params.set("q", filters.query);
   filters.counties.forEach((county) => params.append("county", county));
   return params;
+}
+
+function emptyCountyPlace(names: string[]) {
+  const labeled = names.map((name) => `${name} County`);
+  if (labeled.length === 1) return labeled[0];
+  if (labeled.length === 2) return `${labeled[0]} or ${labeled[1]}`;
+  return "these counties";
+}
+
+function apiCountyName(name: string, options: County[]) {
+  const match = options.find(
+    (county) => county.name.localeCompare(name, "en", { sensitivity: "base" }) === 0,
+  );
+  return match?.name ?? name;
 }
 
 function locationLabel(county: string) {
@@ -241,22 +256,44 @@ export default function DirectoryPage() {
   }
 
   const hasFilters = Boolean(filters.query.trim() || filters.counties.length);
+  const sourceEntries = readDirectory(filters.type, filters.counties, "")?.entries;
+  const countyHasNoListings = filters.counties.length > 0
+    && sourceEntries != null
+    && sourceEntries.length === 0;
+  const place = emptyCountyPlace(filters.counties);
+  const signupTo = filters.type === "creator" ? "/signup?role=creator" : "/signup?role=business";
   const loading = status === "loading";
   const error = status === "error";
   const itemName = filters.type === "business" ? "business" : "creator";
   const pluralName = filters.type === "business" ? "businesses" : "creators";
   const countLabel = entries.length === 1 ? itemName : pluralName;
 
+  function selectCounty(name: string) {
+    updateFilters({ counties: [apiCountyName(name, counties)] });
+  }
+
   return (
     <div className="-m-12 min-h-[calc(100dvh-4.5rem)] bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-my-8">
-    <div className="mx-auto w-full min-w-0 max-w-6xl space-y-8 px-4 py-10 text-[var(--cg-text)] md:px-8 md:py-14">
-      <div className="max-w-2xl">
+    <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-10 text-[var(--cg-text)] md:px-8 md:py-14">
+      <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+      <div className="max-w-2xl lg:col-start-1 lg:row-start-1">
         <h1 className="font-bold tracking-tight text-[var(--cg-primary-dark)]">Explore CollabGarden</h1>
         <p className="mt-3 text-base">
           Discover local businesses and creators across New Jersey.
         </p>
       </div>
 
+      <aside
+        aria-labelledby="directory-map-heading"
+        className="mx-auto w-full max-w-[320px] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mx-0 lg:max-w-none lg:sticky lg:top-24"
+      >
+        <h2 id="directory-map-heading" className="mb-3 text-center text-sm font-semibold text-[var(--cg-primary-dark)] lg:text-left">
+          Counties
+        </h2>
+        <NJCountyMap selected={filters.counties} onSelect={selectCounty} />
+      </aside>
+
+      <div className="space-y-8 lg:col-start-1 lg:row-start-2">
       <div
         className="inline-flex w-full gap-1 rounded-2xl border border-[var(--cg-border)] bg-white p-1 shadow-sm sm:w-auto"
         role="group"
@@ -296,7 +333,7 @@ export default function DirectoryPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {!loading && !error && (
+        {!loading && !error && !countyHasNoListings && (
           <p className="text-sm font-medium" aria-live="polite">
             {entries.length} {countLabel} found
           </p>
@@ -335,10 +372,34 @@ export default function DirectoryPage() {
             Try again
           </AppButton>
         </div>
+      ) : countyHasNoListings ? (
+        <EmptyState
+          title={`No ${pluralName} in ${place} yet`}
+          description={`Nobody is listed for ${place} yet. Sign up, and an approved profile can appear in the directory.`}
+          action={(
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Link
+                to={signupTo}
+                className="cg-focus inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 py-2 text-sm font-semibold text-white no-underline"
+              >
+                Sign up
+              </Link>
+              <AppButton variant="secondary" onPress={() => updateFilters({ counties: [], query: "" })}>
+                Clear filters
+              </AppButton>
+            </div>
+          )}
+        />
       ) : entries.length === 0 ? (
         <EmptyState
           title="No results found"
-          description={hasFilters ? "Try a different search or county." : "There are no listings to show right now."}
+          description={
+            filters.query.trim() && filters.counties.length > 0
+              ? `Nothing in ${place} matches this search.`
+              : hasFilters
+                ? "Try a different search or county."
+                : "There are no listings to show right now."
+          }
           action={hasFilters ? (
             <AppButton variant="secondary" onPress={() => updateFilters({ counties: [], query: "" })}>
               Clear filters
@@ -350,6 +411,8 @@ export default function DirectoryPage() {
           {entries.map((entry) => <DirectoryCard key={entry.id} entry={entry} />)}
         </div>
       )}
+      </div>
+      </div>
     </div>
     </div>
   );

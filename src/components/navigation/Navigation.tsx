@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { Menu, X, type LucideIcon } from "lucide-react";
+import { CountiesMenu } from "./CountiesMenu";
 
 export interface NavItem {
   label: string;
@@ -152,6 +153,7 @@ export function PublicNavbar({
           aria-label={navLabel}
         >
           <PublicLinks links={links} />
+          <CountiesMenu />
         </nav>
 
         <div className="hidden items-center justify-self-end gap-4 lg:flex">
@@ -193,6 +195,7 @@ export function PublicNavbar({
           aria-label={navLabel}
         >
           <PublicLinks links={links} onSelect={() => setOpen(false)} />
+          <CountiesMenu variant="inline" onNavigate={() => setOpen(false)} />
           {identity && (
             <p className="break-all px-3 py-2 text-sm text-[var(--cg-muted)]">{identity}</p>
           )}
