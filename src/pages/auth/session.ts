@@ -92,7 +92,14 @@ export function dashboardPath(role: AccountRole) {
 }
 
 function allowedPath(pathname: string, role: AccountRole) {
-  if (pathname === "/" || pathname === "/discover" || pathname === "/campaigns" || pathname === "/signup") {
+  if (
+    pathname === "/"
+    || pathname === "/discover"
+    || pathname === "/campaigns"
+    || pathname === "/signup"
+    || pathname === "/terms"
+    || pathname === "/privacy"
+  ) {
     return true;
   }
   if (/^\/businesses\/\d+$/.test(pathname) || /^\/creators\/\d+$/.test(pathname)) return true;

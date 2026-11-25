@@ -58,6 +58,7 @@ import {
   offerLabel,
   roleLabel,
 } from "./format";
+import { SiteFooter } from "../../components/SiteFooter";
 import { SiteHeader } from "../auth/SiteHeader";
 import {
   dashboardPath,
@@ -606,10 +607,10 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8f8f0] text-[var(--cg-text)]">
+    <div className="flex min-h-dvh flex-col bg-[#f8f8f0] text-[var(--cg-text)]">
       <SiteHeader />
 
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
+      <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8">
         <div role="main" className="min-w-0 space-y-5" aria-busy={showData && sectionBusy}>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -1070,6 +1071,8 @@ export default function AdminDashboardPage() {
           )}
         </div>
       </div>
+
+      <SiteFooter />
 
       {pending && (
         <ConfirmDialog
