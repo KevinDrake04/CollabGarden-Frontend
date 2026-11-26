@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Modal } from "@heroui/react";
 import { Globe, X } from "lucide-react";
 import {
-  acceptSocialLink,
   isSocialPlatform,
+  readSocialLink,
   socialLinkSummary,
-  socialPlatform,
   socialPlatforms,
   type CreatorSocialLink,
   type SocialPlatformId,
@@ -14,10 +13,8 @@ import { AppButton } from "./ui/Buttons";
 import { AppInput, AppSelect } from "./ui/Fields";
 import "./CreatorSocialLinks.css";
 
-export type { CreatorSocialLink } from "../utils/socialLinks";
-
 type Platform = (typeof socialPlatforms)[number];
-type Row = CreatorSocialLink & { error?: string };
+type SocialDrafts = Partial<Record<SocialPlatformId, { value: string; error?: string }>>;
 
 type Props = {
   links: CreatorSocialLink[];
@@ -57,54 +54,77 @@ function ProfileChoice({ platform, url, disabled, onPress }: {
 }
 
 const primary = socialPlatforms.filter(({ group }) => group === "primary");
+const additional = socialPlatforms.filter(({ group }) => group === "additional");
 
-export function CreatorSocialLinks({ links, onChange, disabled = false, note }: Props) {
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const fields = useRef<HTMLDivElement>(null);
-  const focusTarget = useRef<SocialPlatformId | null>(null);
+export function CreatorSocialLinks({
+  links, onChange, disabled = false,
+  note = "At least one of Instagram, TikTok, YouTube, or Facebook is required.",
+}: Props) {
+  const [drafts, setDrafts] = useState<SocialDrafts | null>(null);
+  const inputs = useRef<Partial<Record<SocialPlatformId, HTMLInputElement | null>>>({});
+  const focusOnOpen = useRef<SocialPlatformId | null>(null);
+  const focusAfterPicker = useRef<SocialPlatformId | null>(null);
+  const noteId = useId();
   const saved = new Map(links.map(({ platform, url }) => [platform, url]));
-  const extras = socialPlatforms.filter(({ group, id }) => group === "additional" && saved.has(id));
-  const available = socialPlatforms.filter(({ id }) => !rows?.some((row) => row.platform === id));
+  const extras = additional.filter(({ id }) => saved.has(id));
+  const available = socialPlatforms.filter(({ id }) => !drafts?.[id]);
 
-  useEffect(() => {
-    const id = focusTarget.current;
-    if (!rows || !id) return;
-    const frame = window.requestAnimationFrame(() => {
-      const input = fields.current?.querySelector<HTMLInputElement>('input[name="' + id + '"]');
-      if (input) {
-        input.focus();
-        focusTarget.current = null;
-      }
+  const pickerPopoverRef = useCallback((popover: HTMLDivElement | null) => {
+    if (popover || !focusAfterPicker.current) return;
+    // The picker returns focus to its trigger when its popover closes.
+    requestAnimationFrame(() => {
+      const platform = focusAfterPicker.current;
+      focusAfterPicker.current = null;
+      if (platform) inputs.current[platform]?.focus();
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [rows]);
+  }, []);
 
   function open(platform: SocialPlatformId) {
-    focusTarget.current = platform;
-    setRows(saved.has(platform) ? [...links] : [...links, { platform, url: "" }]);
+    const next: SocialDrafts = {};
+    for (const [id, value] of saved) next[id] = { value };
+    next[platform] ??= { value: "" };
+    focusOnOpen.current = platform;
+    setDrafts(next);
+  }
+
+  function close() {
+    focusAfterPicker.current = null;
+    setDrafts(null);
   }
 
   function save() {
-    if (!rows || disabled) return;
-    const next = rows.map(({ platform, url }): Row => {
-      const value = url.trim();
-      // Leave saved API links intact when another platform is edited.
-      if (!value || value === saved.get(platform)) return { platform, url: value };
-      const result = acceptSocialLink(platform, value);
-      return "error" in result ? { platform, url, error: result.error } : { platform, url: result.url };
-    });
-    const firstError = next.find(({ error }) => error);
-    if (firstError) {
-      focusTarget.current = firstError.platform;
-      setRows(next);
+    if (!drafts || disabled) return;
+    const nextDrafts = { ...drafts };
+    const nextLinks: CreatorSocialLink[] = [];
+    let firstInvalid: SocialPlatformId | undefined;
+
+    for (const { id } of socialPlatforms) {
+      const draft = drafts[id];
+      if (!draft) continue;
+      if (draft.value === saved.get(id)) {
+        nextLinks.push({ platform: id, url: draft.value });
+        continue;
+      }
+      const result = readSocialLink(id, draft.value);
+      if (result.status === "error") {
+        nextDrafts[id] = { ...draft, error: result.error };
+        firstInvalid ??= id;
+      } else if (result.status === "ok") {
+        nextLinks.push({ platform: id, url: result.url });
+      }
+    }
+
+    if (firstInvalid) {
+      setDrafts(nextDrafts);
+      inputs.current[firstInvalid]?.focus();
       return;
     }
-    onChange(next.filter(({ url }) => url).map(({ platform, url }) => ({ platform, url })));
-    setRows(null);
+    onChange(nextLinks);
+    close();
   }
 
   function submitOnEnter(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
+    if (event.key !== "Enter" || event.nativeEvent.isComposing || !(event.target instanceof HTMLInputElement)) return;
     event.preventDefault();
     save();
   }
@@ -126,17 +146,20 @@ export function CreatorSocialLinks({ links, onChange, disabled = false, note }: 
       <div>
         <h2 className="m-0 text-sm font-medium text-[var(--cg-text)]">Social media profiles</h2>
         {note !== "" && (
-          <p className="mt-1 text-xs text-[var(--cg-muted)]">
-            {note ?? (disabled ? "Social profiles are not available yet." : "Add links to your public profiles.")}
-          </p>
+          <p id={noteId} className="mt-1 text-xs text-[var(--cg-muted)]">{note}</p>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Social media profiles">
+      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Social media profiles"
+        aria-describedby={note ? noteId : undefined} aria-disabled={disabled}>
         {primary.map(choice)}
       </div>
-      {extras.map(choice)}
+      {extras.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Additional profiles">
+          {extras.map((platform) => <li key={platform.id}>{choice(platform)}</li>)}
+        </ul>
+      )}
       <Modal>
-        <Modal.Backdrop isOpen={rows !== null} onOpenChange={(open) => { if (!open) setRows(null); }}>
+        <Modal.Backdrop isOpen={drafts !== null} onOpenChange={(open) => { if (!open) close(); }}>
           <Modal.Container size="sm" placement="center">
             <Modal.Dialog aria-label="Social media profiles" className="creator-social-dialog">
               <Modal.Header className="shrink-0">
@@ -146,20 +169,32 @@ export function CreatorSocialLinks({ links, onChange, disabled = false, note }: 
                 <Modal.CloseTrigger><X size={18} aria-hidden="true" /></Modal.CloseTrigger>
               </Modal.Header>
               <Modal.Body className="creator-social-body">
-                <div ref={fields} className="flex flex-col gap-4" onKeyDown={submitOnEnter}>
-                  {rows?.map((row) => {
-                    const platform = socialPlatform(row.platform);
+                <div className="flex flex-col gap-4" onKeyDown={submitOnEnter}>
+                  {socialPlatforms.map((platform) => {
+                    const draft = drafts?.[platform.id];
+                    if (!draft) return null;
                     return (
-                      <div key={row.platform} className="relative">
-                        <AppInput label={platform.inputLabel} name={row.platform} value={row.url}
-                          onChange={(url) => setRows((current) => current?.map((item) =>
-                            item.platform === row.platform ? { platform: row.platform, url } : item) ?? null)}
-                          placeholder={platform.placeholder} helper={"Example: " + platform.example}
-                          error={row.error} disabled={disabled}
+                      <div key={platform.id} className="relative">
+                        <AppInput
+                          label={<span className="block pr-16">{platform.inputLabel}</span>}
+                          name={platform.id}
+                          value={draft.value}
+                          onChange={(value) => setDrafts((current) => current && ({ ...current, [platform.id]: { value } }))}
+                          placeholder={platform.placeholder}
+                          helper={`Example: ${platform.example}`}
+                          error={draft.error}
+                          disabled={disabled}
+                          autoFocus={focusOnOpen.current === platform.id}
+                          ref={(input) => { inputs.current[platform.id] = input; }}
                         />
                         <button type="button" className="creator-social-remove" aria-label={"Remove " + platform.label}
                           disabled={disabled}
-                          onClick={() => setRows((current) => current?.filter((item) => item.platform !== row.platform) ?? null)}
+                          onClick={() => setDrafts((current) => {
+                            if (!current) return current;
+                            const next = { ...current };
+                            delete next[platform.id];
+                            return next;
+                          })}
                         >
                           Remove
                         </button>
@@ -169,18 +204,18 @@ export function CreatorSocialLinks({ links, onChange, disabled = false, note }: 
                   {available.length > 0 && (
                     <AppSelect label="Add another platform" name="additionalProfile" value=""
                       onChange={(value) => {
-                        if (!isSocialPlatform(value) || !available.some(({ id }) => id === value)) return;
-                        focusTarget.current = value;
-                        setRows((current) => current && [...current, { platform: value, url: "" }]);
+                        if (!isSocialPlatform(value) || drafts?.[value]) return;
+                        focusAfterPicker.current = value;
+                        setDrafts((current) => current && ({ ...current, [value]: { value: "" } }));
                       }}
                       options={available.map(({ id, label }) => ({ value: id, label }))}
-                      placeholder="Select a platform" disabled={disabled}
+                      placeholder="Select a platform" disabled={disabled} popoverRef={pickerPopoverRef}
                     />
                   )}
                 </div>
               </Modal.Body>
               <Modal.Footer className="shrink-0">
-                <AppButton type="button" variant="secondary" onPress={() => setRows(null)}>Cancel</AppButton>
+                <AppButton type="button" variant="secondary" onPress={close}>Cancel</AppButton>
                 <AppButton type="button" onPress={save} isDisabled={disabled}>Save</AppButton>
               </Modal.Footer>
             </Modal.Dialog>

@@ -281,7 +281,7 @@ function SignupForm({ role }: { role: SignupRole }) {
         />
 
         {!isBusiness && (
-          <CreatorSocialLinks links={[]} onChange={() => {}} disabled />
+          <CreatorSocialLinks links={[]} onChange={() => {}} disabled note="Social profiles are not available yet." />
         )}
       </div>
 

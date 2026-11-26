@@ -5,38 +5,20 @@ import {
   businessOfferLabel,
   businessOfferTypes,
   businessProfileLimits,
-  businessProfileSaveMessage,
   type BusinessProfile,
   type BusinessProfileUpdate,
+  type BusinessSave,
 } from "../../../api/businessProfile";
+import { sameSelection } from "../../../api/profileRequest";
+import { isPublicHttpUrl } from "../../../utils/profileUrl";
+import { emptyProfileImage, ProfileImageField } from "../shared/ProfileImageField";
 import { AccountField } from "../shared/workspaceSession";
 import { BusinessCountyField } from "./BusinessCountyField";
-import { BusinessLogoField } from "./BusinessLogoField";
 
-type FieldErrors = {
-  name?: string;
-  category?: string;
-  description?: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  website?: string;
-  countyIds?: string;
-};
+type FieldErrors = Partial<Record<"name" | "category" | "description" | "contactEmail" | "contactPhone" |
+  "website" | "countyIds", string>>;
 
-type Draft = {
-  name: string;
-  category: string;
-  description: string;
-  contactEmail: string;
-  contactPhone: string;
-  website: string;
-  countyIds: number[];
-  offers: string[];
-};
-
-const emptyErrors: FieldErrors = {};
-
-function draftFromProfile(profile: BusinessProfile): Draft {
+function draftFromProfile(profile: BusinessProfile) {
   return {
     name: profile.name,
     category: profile.category ?? "",
@@ -44,57 +26,16 @@ function draftFromProfile(profile: BusinessProfile): Draft {
     contactEmail: profile.contact_email ?? "",
     contactPhone: profile.contact_phone ?? "",
     website: profile.website ?? "",
-    countyIds: [...profile.county_ids],
-    offers: [...profile.offer_types],
+    countyIds: profile.county_ids,
+    offers: profile.offer_types,
   };
 }
 
-function countyAllowed(id: number, counties: County[], originalIds: number[]) {
-  if (!Number.isInteger(id) || id < 1) return false;
-  if (counties.some((county) => county.county_id === id)) return true;
-  return originalIds.includes(id);
-}
+type Draft = ReturnType<typeof draftFromProfile>;
 
-function validate(
-  draft: Draft,
-  counties: County[],
-  originalIds: number[],
-) {
+function prepareSave(draft: Draft, profile: BusinessProfile, counties: County[], hasUnsupportedOffers: boolean) {
   const errors: FieldErrors = {};
-  const name = draft.name.trim();
-  if (!name) errors.name = "Enter a business name.";
-  else if (name.length > businessProfileLimits.name) {
-    errors.name = "Use 120 characters or fewer for the business name.";
-  }
-
-  const category = draft.category.trim();
-  if (category.length > businessProfileLimits.category) {
-    errors.category = "Use 60 characters or fewer for the category.";
-  }
-
-  const description = draft.description.trim();
-  if (description.length > businessProfileLimits.description) {
-    errors.description = "Use 2000 characters or fewer for the description.";
-  }
-
-  const email = draft.contactEmail.trim();
-  const website = draft.website.trim();
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.contactEmail = "Enter a valid email address.";
-  if (draft.contactPhone.trim().length > businessProfileLimits.phone) {
-    errors.contactPhone = "Use 30 characters or fewer for the contact phone.";
-  }
-  if (website && (!/^https?:\/\/\S+$/.test(website) || website.length > businessProfileLimits.website)) {
-    errors.website = "Enter an HTTP or HTTPS URL of 500 characters or fewer.";
-  }
-  if (draft.countyIds.some((id) => !countyAllowed(id, counties, originalIds))) {
-    errors.countyIds = "Choose counties from the list.";
-  }
-
-  return errors;
-}
-
-function toUpdate(draft: Draft): BusinessProfileUpdate {
-  return {
+  const fields: BusinessProfileUpdate = {
     name: draft.name.trim(),
     description: draft.description.trim() || null,
     category: draft.category.trim() || null,
@@ -104,6 +45,36 @@ function toUpdate(draft: Draft): BusinessProfileUpdate {
     offer_types: draft.offers,
     county_ids: draft.countyIds,
   };
+  const changes: Partial<BusinessProfileUpdate> = Object.fromEntries(Object.entries(fields).filter(([key, value]) => {
+    if (key === "county_ids") return !sameSelection(fields.county_ids, profile.county_ids);
+    if (key === "offer_types") return !hasUnsupportedOffers && !sameSelection(fields.offer_types, profile.offer_types);
+    return value !== profile[key as keyof BusinessProfileUpdate];
+  }));
+
+  if (changes.name !== undefined) {
+    if (!fields.name) errors.name = "Enter a business name.";
+    else if (fields.name.length > businessProfileLimits.name) errors.name = "Use 120 characters or fewer for the business name.";
+  }
+  if (changes.category && changes.category.length > businessProfileLimits.category) {
+    errors.category = "Use 60 characters or fewer for the category.";
+  }
+  if (changes.description && changes.description.length > businessProfileLimits.description) {
+    errors.description = "Use 2000 characters or fewer for the description.";
+  }
+  if (changes.contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(changes.contact_email)) {
+    errors.contactEmail = "Enter a valid email address.";
+  }
+  if (changes.contact_phone && changes.contact_phone.length > businessProfileLimits.phone) {
+    errors.contactPhone = "Use 30 characters or fewer for the contact phone.";
+  }
+  if (changes.website && (changes.website.length > businessProfileLimits.website || !isPublicHttpUrl(changes.website))) {
+    errors.website = "Enter an HTTP or HTTPS URL of 500 characters or fewer.";
+  }
+  if (changes.county_ids?.some((id) => !profile.county_ids.includes(id) && !counties.some(({ county_id }) => county_id === id))) {
+    errors.countyIds = "Choose counties from the list.";
+  }
+
+  return { changes, errors };
 }
 
 export function BusinessProfileForm({
@@ -117,21 +88,20 @@ export function BusinessProfileForm({
   profile: BusinessProfile;
   counties: County[];
   onCancel: () => void;
-  onSave: (update: BusinessProfileUpdate, logo: File | null) => Promise<void>;
+  onSave: (update: Partial<BusinessProfileUpdate>, logo: File | null) => Promise<BusinessSave | undefined>;
 }) {
   const [draft, setDraft] = useState(() => draftFromProfile(profile));
-  const [errors, setErrors] = useState<FieldErrors>(emptyErrors);
-  const [image, setImage] = useState<File | null>(null);
-  const [imageError, setImageError] = useState("");
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [image, setImage] = useState(emptyProfileImage);
   const [alert, setAlert] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const lock = useRef(false);
+  const [check, setCheck] = useState<BusinessSave["check"]>();
   const alertRef = useRef<HTMLParagraphElement>(null);
-  const originalCountyIds = profile.county_ids;
+  const disabled = submitting || Boolean(check);
+  const hasUnsupportedOffers = profile.offer_types.some((offer) => !businessOfferTypes.some((type) => offer === type));
 
   useEffect(() => {
-    if (!alert) return;
-    alertRef.current?.scrollIntoView({ block: "nearest" });
+    if (alert) alertRef.current?.scrollIntoView({ block: "nearest" });
   }, [alert]);
 
   function patchDraft(patch: Partial<Draft>, errorKey?: keyof FieldErrors) {
@@ -150,28 +120,50 @@ export function BusinessProfileForm({
     setAlert("");
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (lock.current) return;
-    const errors = validate(draft, counties, originalCountyIds);
-    setErrors(errors);
-    if (imageError || Object.keys(errors).length) {
-      setAlert(imageError || "Check the highlighted fields and try again.");
-      return;
-    }
-
-    lock.current = true;
+  async function finish(save: () => Promise<BusinessSave | undefined>, rechecking = false) {
     setSubmitting(true);
     setAlert("");
     try {
-      await onSave(toUpdate(draft), image);
-    } catch (error) {
-      setAlert(businessProfileSaveMessage(error));
+      const result = await save();
+      if (!result) return;
+      const { saved } = result;
+      setDraft((current) => {
+        const next = draftFromProfile(saved.profile);
+        if (saved.detailsSaved) return next;
+        const previous = draftFromProfile(profile);
+        for (const key of ["name", "category", "description", "contactEmail", "contactPhone", "website"] as const) {
+          if (current[key] !== previous[key]) next[key] = current[key];
+        }
+        if (!sameSelection(current.countyIds, previous.countyIds)) next.countyIds = current.countyIds;
+        if (!sameSelection(current.offers, previous.offers)) next.offers = current.offers;
+        return next;
+      });
+      if (saved.imageSaved) setImage(emptyProfileImage);
+      setCheck(() => result.check);
+      if (result.error) {
+        setAlert(`${saved.detailsSaved ? "Profile details were saved. " : ""}${result.error.message}`);
+      } else if (rechecking) {
+        setAlert("Saved changes checked. Review any remaining edits.");
+      }
+    } catch {
+      setAlert("Profile changes could not be saved. Try again.");
     } finally {
-      lock.current = false;
       setSubmitting(false);
     }
   }
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (disabled || image.checking) return;
+    const { changes, errors } = prepareSave(draft, profile, counties, hasUnsupportedOffers);
+    setErrors(errors);
+    if (image.error || Object.keys(errors).length) {
+      setAlert(image.error || "Check the highlighted fields and try again.");
+      return;
+    }
+    void finish(() => onSave(changes, image.file));
+  }
+
 
   return (
     <form
@@ -188,25 +180,14 @@ export function BusinessProfileForm({
       <dl>
         <AccountField label="Email">{email}</AccountField>
       </dl>
-      <BusinessLogoField
+      <ProfileImageField
+        label="Business logo"
         name={draft.name || profile.name}
         savedUrl={profile.logo_url}
-        file={image}
-        error={imageError}
-        disabled={submitting}
-        onFile={(file) => {
-          setImage(file);
-          setImageError("");
-          setAlert("");
-        }}
-        onInvalid={(message) => {
-          setImage(null);
-          setImageError(message);
-          setAlert("");
-        }}
-        onClear={() => {
-          setImage(null);
-          setImageError("");
+        selection={image}
+        disabled={disabled}
+        onChange={(selection) => {
+          setImage(selection);
           setAlert("");
         }}
       />
@@ -218,7 +199,7 @@ export function BusinessProfileForm({
           onChange={(name) => patchDraft({ name }, "name")}
           placeholder="Garden State Bakery"
           error={errors.name}
-          disabled={submitting}
+          disabled={disabled}
           required
         />
         <AppInput
@@ -228,7 +209,7 @@ export function BusinessProfileForm({
           onChange={(category) => patchDraft({ category }, "category")}
           placeholder="Bakery, cafe, retail"
           error={errors.category}
-          disabled={submitting}
+          disabled={disabled}
         />
         <AppInput
           label="Contact email"
@@ -237,7 +218,7 @@ export function BusinessProfileForm({
           value={draft.contactEmail}
           onChange={(contactEmail) => patchDraft({ contactEmail }, "contactEmail")}
           error={errors.contactEmail}
-          disabled={submitting}
+          disabled={disabled}
         />
         <AppInput
           label="Contact phone"
@@ -246,7 +227,7 @@ export function BusinessProfileForm({
           value={draft.contactPhone}
           onChange={(contactPhone) => patchDraft({ contactPhone }, "contactPhone")}
           error={errors.contactPhone}
-          disabled={submitting}
+          disabled={disabled}
         />
         <AppInput
           className="sm:col-span-2"
@@ -256,7 +237,7 @@ export function BusinessProfileForm({
           value={draft.website}
           onChange={(website) => patchDraft({ website }, "website")}
           error={errors.website}
-          disabled={submitting}
+          disabled={disabled}
         />
         <AppTextarea
           className="sm:col-span-2"
@@ -267,23 +248,25 @@ export function BusinessProfileForm({
           placeholder="Tell creators what your business does."
           rows={4}
           error={errors.description}
-          disabled={submitting}
+          disabled={disabled}
         />
       </div>
       <BusinessCountyField
         counties={counties}
         selected={draft.countyIds}
-        originalIds={originalCountyIds}
+        originalIds={profile.county_ids}
         error={errors.countyIds}
-        disabled={submitting}
+        disabled={disabled}
         onChange={(countyIds) => patchDraft({ countyIds }, "countyIds")}
       />
       <fieldset
         className="min-w-0 space-y-2"
-        disabled={submitting}
+        disabled={disabled || hasUnsupportedOffers}
       >
         <legend className="text-sm font-medium text-[var(--cg-text)]">Collaboration types</legend>
-        <p className="text-sm">Gifted, dining, or paid. Choose any that apply.</p>
+        <p className="text-sm">{hasUnsupportedOffers
+          ? "Your stored collaboration types include an unsupported option. They will be kept."
+          : "Gifted, dining, or paid. Choose any that apply."}</p>
         <div className="rounded-xl border border-[var(--cg-border)] bg-white p-2">
           {businessOfferTypes.map((offer) => {
             const checked = draft.offers.includes(offer);
@@ -314,11 +297,11 @@ export function BusinessProfileForm({
         <p ref={alertRef} role="alert" className="text-sm text-[var(--cg-error)]">{alert}</p>
       )}
       <div className="flex flex-wrap gap-3">
-        <AppButton type="submit" isDisabled={submitting}>
+        <AppButton type="submit" isDisabled={disabled || image.checking}>
           {submitting ? "Saving..." : "Save changes"}
         </AppButton>
-        <AppButton type="button" variant="secondary" isDisabled={submitting} onPress={onCancel}>
-          Cancel
+        <AppButton type="button" variant="secondary" isDisabled={submitting} onPress={check ? () => void finish(check, true) : onCancel}>
+          {check ? "Check saved changes" : "Cancel"}
         </AppButton>
       </div>
     </form>

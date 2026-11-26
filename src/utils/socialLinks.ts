@@ -1,37 +1,34 @@
-// Supported social profiles and shared handle and URL validation.
-
-export type SocialPlatformId = keyof typeof platformDefinitions;
+export type SocialPlatformId = keyof typeof platforms;
 
 export type CreatorSocialLink = {
   platform: SocialPlatformId;
   url: string;
 };
 
+export type SignupSocialLink = CreatorSocialLink;
+
 type PlatformDefinition = {
   label: string;
+  publicLabel?: string;
   group: "primary" | "additional";
   inputLabel: string;
   placeholder: string;
   example: string;
-  errorExample: string;
   hosts: readonly string[] | null;
   handleBase: string | null;
-  requiresProfilePath: boolean;
   displayAt: boolean;
   icon: string;
 };
 
-const platformDefinitions = {
+const platforms = {
   instagram: {
     label: "Instagram",
     group: "primary",
     inputLabel: "Instagram username or link",
     placeholder: "yourname",
     example: "https://instagram.com/yourname",
-    errorExample: "yourname or https://instagram.com/yourname",
     hosts: ["instagram.com"],
     handleBase: "https://instagram.com/",
-    requiresProfilePath: true,
     displayAt: false,
     icon: "/icons/social/instagram.svg",
   },
@@ -41,10 +38,8 @@ const platformDefinitions = {
     inputLabel: "TikTok username or link",
     placeholder: "@yourname",
     example: "https://www.tiktok.com/@yourname",
-    errorExample: "@yourname or https://www.tiktok.com/@yourname",
     hosts: ["tiktok.com", "vm.tiktok.com"],
     handleBase: "https://www.tiktok.com/@",
-    requiresProfilePath: true,
     displayAt: true,
     icon: "/icons/social/tiktok.svg",
   },
@@ -54,10 +49,8 @@ const platformDefinitions = {
     inputLabel: "YouTube handle or link",
     placeholder: "@yourname",
     example: "https://www.youtube.com/@yourname",
-    errorExample: "@yourname or https://www.youtube.com/@yourname",
     hosts: ["youtube.com", "m.youtube.com", "youtu.be"],
     handleBase: "https://www.youtube.com/@",
-    requiresProfilePath: true,
     displayAt: true,
     icon: "/icons/social/youtube.svg",
   },
@@ -67,24 +60,20 @@ const platformDefinitions = {
     inputLabel: "Facebook username or link",
     placeholder: "yourname",
     example: "https://www.facebook.com/yourname",
-    errorExample: "yourname or https://www.facebook.com/yourname",
     hosts: ["facebook.com", "m.facebook.com"],
     handleBase: "https://www.facebook.com/",
-    requiresProfilePath: true,
     displayAt: false,
     icon: "/icons/social/facebook.svg",
   },
-
   x: {
     label: "X / Twitter",
+    publicLabel: "X",
     group: "additional",
     inputLabel: "X / Twitter username or link",
     placeholder: "@yourname",
     example: "https://x.com/yourname",
-    errorExample: "@yourname or https://x.com/yourname",
     hosts: ["x.com", "twitter.com", "mobile.twitter.com"],
     handleBase: "https://x.com/",
-    requiresProfilePath: true,
     displayAt: true,
     icon: "/icons/social/x.svg",
   },
@@ -94,20 +83,15 @@ const platformDefinitions = {
     inputLabel: "Website link",
     placeholder: "yourwebsite.com",
     example: "https://yourwebsite.com",
-    errorExample: "https://yourwebsite.com",
     hosts: null,
     handleBase: null,
-    requiresProfilePath: false,
     displayAt: false,
     icon: "",
   },
 } satisfies Record<string, PlatformDefinition>;
 
-export function socialPlatform(id: SocialPlatformId) {
-  return { id, ...platformDefinitions[id] };
-}
-
-export const socialPlatforms = (Object.keys(platformDefinitions) as SocialPlatformId[]).map(socialPlatform);
+export const socialPlatforms: readonly (PlatformDefinition & { id: SocialPlatformId })[] =
+  (Object.keys(platforms) as SocialPlatformId[]).map((id) => ({ id, ...platforms[id] }));
 
 const maxUrlLength = 500;
 const shortLinkHosts = new Set(["vm.tiktok.com", "youtu.be"]);
@@ -115,23 +99,23 @@ const reservedPaths = new Set(["profile.php", "share", "watch"]);
 
 const knownHosts = new Set(socialPlatforms.flatMap((platform) => platform.hosts ?? []));
 export function isSocialPlatform(platform: string): platform is SocialPlatformId {
-  return Object.hasOwn(platformDefinitions, platform);
+  return Object.hasOwn(platforms, platform);
 }
 
-function linkError(platform: ReturnType<typeof socialPlatform>) {
-  if (platform.id === "website") return `Enter a link, such as ${platform.example}.`;
-  return `Enter a handle or link, such as ${platform.errorExample}.`;
+function linkError(platform: PlatformDefinition) {
+  if (!platform.handleBase) return `Enter a link, such as ${platform.example}.`;
+  return `Enter a handle or link, such as ${platform.placeholder} or ${platform.example}.`;
 }
 
 function siteHost(url: URL) {
   return url.hostname.toLowerCase().replace(/^www\./, "");
 }
 
-function looksLikeUrl(value: string, platform: ReturnType<typeof socialPlatform>) {
+function looksLikeUrl(value: string, platform: PlatformDefinition) {
   if (value.includes("://") || value.startsWith("//")) return true;
   const host = value.split(/[/?#]/)[0]?.toLowerCase().replace(/^www\./, "") ?? "";
   if (knownHosts.has(host)) return true;
-  if (platform.id !== "website") return false;
+  if (platform.hosts) return false;
   return host.includes(".") && /^[a-z0-9.-]+$/i.test(host);
 }
 
@@ -144,7 +128,7 @@ function handleValue(value: string) {
 }
 
 function profileUrl(
-  platform: ReturnType<typeof socialPlatform>,
+  platform: PlatformDefinition,
   value: string,
 ): { url: string } | { error: string } {
   let candidate = value;
@@ -164,33 +148,48 @@ function profileUrl(
   if (url.protocol !== "http:" && url.protocol !== "https:") return { error: linkError(platform) };
   if (platform.hosts) {
     if (!platform.hosts.includes(siteHost(url))) return { error: linkError(platform) };
+    if (url.pathname === "/") {
+      return { error: `Include the ${platform.label} profile name in the link.` };
+    }
   } else if (!url.hostname.includes(".")) {
     return { error: linkError(platform) };
-  }
-  if (platform.requiresProfilePath && (url.pathname === "/" || url.pathname === "")) {
-    return { error: `Include the ${platform.label} profile name in the link.` };
   }
   if (url.href.length > maxUrlLength) return { error: "Use a link under 500 characters." };
   return { url: url.href };
 }
 
-export function acceptSocialLink(
+export function readSocialLink(
   platformId: SocialPlatformId,
   raw: string,
-): { url: string } | { error: string } {
-  const platform = socialPlatform(platformId);
+): { status: "empty" } | { status: "error"; error: string } | { status: "ok"; url: string } {
+  const platform = platforms[platformId];
   const trimmed = raw.trim();
-  if (!trimmed || /\s/.test(trimmed)) return { error: linkError(platform) };
+  if (!trimmed) return { status: "empty" };
+  if (/\s/.test(trimmed)) return { status: "error", error: linkError(platform) };
 
-  if (looksLikeUrl(trimmed, platform)) return profileUrl(platform, trimmed);
-  const handle = handleValue(trimmed);
-  if (!platform.handleBase || !handle) return { error: linkError(platform) };
-  const url = `${platform.handleBase}${encodeURIComponent(handle)}`;
-  return url.length <= maxUrlLength ? { url } : { error: "Use a link under 500 characters." };
+  if (!looksLikeUrl(trimmed, platform)) {
+    const handle = handleValue(trimmed);
+    if (!platform.handleBase || !handle) return { status: "error", error: linkError(platform) };
+    const url = `${platform.handleBase}${encodeURIComponent(handle)}`;
+    if (url.length > maxUrlLength) {
+      return { status: "error", error: "Use a link under 500 characters." };
+    }
+    return { status: "ok", url };
+  }
+
+  const normalized = profileUrl(platform, trimmed);
+  if ("url" in normalized) return { status: "ok", url: normalized.url };
+  return { status: "error", error: normalized.error };
+}
+
+export function requiredCreatorLinkError(links: readonly SignupSocialLink[]) {
+  if (links.length === 0) return "Add at least one link to continue";
+  if (links.some(({ platform }) => platforms[platform].group === "primary")) return "";
+  return "Add an Instagram, TikTok, YouTube, or Facebook link to continue";
 }
 
 export function socialLinkSummary(platformId: SocialPlatformId, url: string) {
-  const platform = socialPlatform(platformId);
+  const platform = platforms[platformId];
   const trimmed = url.trim();
   let parsed: URL;
   try {
@@ -200,16 +199,12 @@ export function socialLinkSummary(platformId: SocialPlatformId, url: string) {
   }
 
   const host = siteHost(parsed);
-  let parts: string[];
-  try {
-    parts = parsed.pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part));
-  } catch {
-    parts = parsed.pathname.split("/").filter(Boolean);
-  }
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  let name = parts[0] ?? "";
+  try { name = decodeURIComponent(name); } catch { /* Keep malformed escapes as written. */ }
 
-  const name = parts[0] ?? "";
   const singleProfile = parts.length === 1 && !parsed.search && !reservedPaths.has(name.toLowerCase());
-  if (platform.id !== "website" && singleProfile && !shortLinkHosts.has(host)) {
+  if (platform.hosts && singleProfile && !shortLinkHosts.has(host)) {
     if (name.startsWith("@")) return name;
     if (platform.displayAt) return `@${name}`;
     return name;
