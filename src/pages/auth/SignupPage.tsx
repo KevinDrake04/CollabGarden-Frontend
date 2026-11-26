@@ -1,52 +1,36 @@
-import { type FormEvent, type ReactNode, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { FieldError, InputGroup, Label, TextField } from "@heroui/react";
 import {
   AppButton,
   AppInput,
   AppNotice,
-  AppSelect,
-  CreatorSocialLinks,
 } from "../../components";
-import { AuthError, signup } from "../../api/auth";
+import { signup } from "../../api/auth";
+import { loadCounties } from "../../api/directory";
 import {
   parseSignupRole,
   RoleOptions,
   type SignupRole,
 } from "./RoleSelectModal";
+import {
+  ProfileCompletionForm,
+  type CompletedProfile,
+  type CountyOptions,
+  type ProfileDraft,
+} from "./ProfileCompletionForm";
+import { dashboardPath, watchSession, writeSession } from "./session";
 
-const countyOptions = [
-  "Atlantic",
-  "Bergen",
-  "Burlington",
-  "Camden",
-  "Cape May",
-  "Cumberland",
-  "Essex",
-  "Gloucester",
-  "Hudson",
-  "Hunterdon",
-  "Mercer",
-  "Middlesex",
-  "Monmouth",
-  "Morris",
-  "Ocean",
-  "Passaic",
-  "Salem",
-  "Somerset",
-  "Sussex",
-  "Union",
-  "Warren",
-].map((county) => ({ value: county, label: county }));
+const manualLoginMessage =
+  "Your account was created, but we couldn't sign you in automatically. Log in to continue.";
 
 const cardClass =
   "rounded-2xl border border-[var(--cg-border)] bg-white p-6 shadow-sm md:p-8";
 
 function AuthFrame({ children }: { children: ReactNode }) {
-  // Cancel the default page padding so this screen can use the landing page background.
   return (
-    <div className="-m-12 min-h-[calc(100dvh-4.5rem)] bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-my-8">
+    <div className="-mx-12 -mt-12 flex-1 bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-mt-8">
       <div className="mx-auto grid w-full max-w-6xl items-center gap-8 px-4 py-10 md:grid-cols-2 md:gap-12 md:px-8 md:py-14">
         <div className="hidden overflow-hidden rounded-2xl md:block">
           <img
@@ -98,100 +82,188 @@ function RolePrompt({
   );
 }
 
+function StepMarks({ step }: { step: 1 | 2 }) {
+  return (
+    <div className="mb-4 flex items-center gap-2" aria-label={`Step ${step} of 2`}>
+      {[1, 2].map((item) => (
+        <span
+          key={item}
+          aria-hidden="true"
+          className={`h-1 w-8 rounded-full ${
+            item <= step ? "bg-[var(--cg-primary)]" : "bg-[var(--cg-border)]"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
 function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function SignupForm({ role }: { role: SignupRole }) {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [counties, setCounties] = useState<CountyOptions>("loading");
+  const [step, setStep] = useState<1 | 2>(1);
+  const [draft, setDraft] = useState<ProfileDraft>({
+    name: "",
+    countyId: "",
+    links: [],
+    agreed: false,
+  });
   const [emailError, setEmailError] = useState("");
-  const [nameError, setNameError] = useState("");
   const [passwordError, setPasswordError] = useState("");
-  const [notice, setNotice] = useState<{
-    tone: "success" | "error" | "info";
-    message: string;
-  } | null>(null);
+  const [submitError, setSubmitError] = useState("");
+  const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const lock = useRef(false);
+  const mounted = useRef(false);
   const isBusiness = role === "business";
   const locked = submitting || completed;
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (lock.current) return;
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
-    const trimmedEmail = email.trim();
-    const trimmedName = name.trim();
-    const nextEmailError = validEmail(trimmedEmail) ? "" : "Enter a valid email address.";
-    const nextNameError = trimmedName
-      ? ""
-      : isBusiness
-        ? "Enter your business name."
-        : "Enter your display name.";
+  useEffect(() => {
+    loadCounties().then(
+      (list) => { if (mounted.current) setCounties(list); },
+      () => { if (mounted.current) setCounties("error"); },
+    );
+  }, []);
+
+  function onContinue(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (lock.current || locked) return;
+
+    const nextEmailError = validEmail(email.trim()) ? "" : "Enter a valid email address.";
     const nextPasswordError = password.length >= 6
       ? ""
       : "Use at least 6 characters for your password.";
-
     setEmailError(nextEmailError);
-    setNameError(nextNameError);
     setPasswordError(nextPasswordError);
-    if (nextEmailError || nextNameError || nextPasswordError) {
-      setNotice(null);
-      return;
-    }
+    setNotice("");
+    if (nextEmailError || nextPasswordError) return;
+    setSubmitError("");
+    setStep(2);
+  }
 
+  async function onProfileComplete(profile: CompletedProfile) {
+    if (lock.current) return;
     lock.current = true;
     setSubmitting(true);
-    setNotice(null);
+    setSubmitError("");
+    const { pathname, search } = window.location;
+    const stillOnSignup = () => mounted.current
+      && window.location.pathname === pathname
+      && window.location.search === search;
+    let sessionChanged = false;
+    const stopWatching = watchSession(() => { sessionChanged = true; });
+    let result;
     try {
-      await signup({
-        email: trimmedEmail,
-        password,
-        role,
-        name: trimmedName,
-      });
-      setCompleted(true);
-      setPassword("");
-      setNotice({
-        tone: "success",
-        message: "Your account was created. Check your email if verification is required.",
-      });
+      result = await signup({ email: email.trim(), password, ...profile, role });
     } catch (error) {
-      lock.current = false;
-      const fallback = "Sign up failed. Please try again.";
-      const message = error instanceof AuthError || error instanceof Error
-        ? error.message || fallback
-        : fallback;
-      setNotice({ tone: "error", message });
+      if (stillOnSignup()) {
+        lock.current = false;
+        setSubmitting(false);
+        setSubmitError((error instanceof Error && error.message) || "Sign up failed. Please try again.");
+      }
+      return;
     } finally {
-      setSubmitting(false);
+      stopWatching();
     }
+
+    if (!stillOnSignup()) return;
+    setPassword("");
+    setSubmitting(false);
+    setCompleted(true);
+
+    let session = !sessionChanged && result.status === "signed-in" ? result.session : null;
+    if (session) {
+      try {
+        writeSession(session);
+      } catch {
+        session = null;
+      }
+    }
+    if (session) {
+      navigate(dashboardPath(session.role), { replace: true });
+      return;
+    }
+    setStep(1);
+    setNotice(manualLoginMessage);
+  }
+
+  const heading = isBusiness ? "Join as a business" : "Join as a creator";
+  const summary = isBusiness
+    ? "Find and collaborate with local creators."
+    : "Connect with businesses and discover opportunities.";
+
+  if (step === 2) {
+    return (
+      <div className={cardClass}>
+        <StepMarks step={2} />
+        <h1 className="font-bold tracking-tight text-[var(--cg-primary-dark)]">
+          {heading}
+        </h1>
+        <p className="mt-2 text-sm">{summary}</p>
+        <ProfileCompletionForm
+          role={role}
+          counties={counties}
+          draft={draft}
+          onDraftChange={setDraft}
+          submitting={submitting}
+          errorMessage={submitError}
+          onSubmit={onProfileComplete}
+        >
+          <div className="flex gap-3">
+            <AppButton
+              type="button"
+              variant="secondary"
+              className="border border-[var(--cg-border)] bg-white"
+              onPress={() => {
+                if (submitting) return;
+                setSubmitError("");
+                setStep(1);
+              }}
+              isDisabled={submitting}
+            >
+              Back
+            </AppButton>
+            <AppButton type="submit" className="flex-1" isDisabled={submitting}>
+              {submitting ? "Creating account..." : "Create account"}
+            </AppButton>
+          </div>
+        </ProfileCompletionForm>
+      </div>
+    );
   }
 
   return (
-    <form noValidate onSubmit={onSubmit} className={cardClass}>
+    <form noValidate onSubmit={onContinue} className={cardClass}>
+      <StepMarks step={1} />
       <h1 className="font-bold tracking-tight text-[var(--cg-primary-dark)]">
-        {isBusiness ? "Join as a business" : "Join as a creator"}
+        {heading}
       </h1>
       <p className="mt-2 text-sm">
-        {isBusiness
-          ? "Find and collaborate with local creators."
-          : "Connect with businesses and discover opportunities."}{" "}
+        {summary}{" "}
         <Link
           to="/signup"
-          aria-disabled={submitting}
-          tabIndex={submitting ? -1 : undefined}
+          aria-disabled={locked}
+          tabIndex={locked ? -1 : undefined}
           className={`font-semibold whitespace-nowrap no-underline ${
-            submitting
+            locked
               ? "pointer-events-none text-[var(--cg-muted)]"
               : "text-[var(--cg-primary-dark)]"
           }`}
           onClick={(event) => {
-            if (submitting) event.preventDefault();
+            if (locked) event.preventDefault();
           }}
         >
           Change role
@@ -257,50 +329,20 @@ function SignupForm({ role }: { role: SignupRole }) {
           )}
         </TextField>
 
-        <AppSelect
-          label="County"
-          name="county"
-          options={countyOptions}
-          placeholder="Select a county"
-          disabled
-          helper="County selection is not available yet."
-        />
-
-        <AppInput
-          label={isBusiness ? "Business Name" : "Display Name"}
-          name={isBusiness ? "businessName" : "displayName"}
-          placeholder={isBusiness ? "Garden Cafe" : "Alex Rivera"}
-          value={name}
-          onChange={(value) => {
-            setName(value);
-            setNameError("");
-          }}
-          error={nameError}
-          disabled={locked}
-          required
-        />
-
-        {!isBusiness && (
-          <CreatorSocialLinks links={[]} onChange={() => {}} disabled note="Social profiles are not available yet." />
-        )}
       </div>
-
-      <p className="mt-4 text-sm text-[var(--cg-muted)]">
-        Profiles need approval before they appear in the public directory.
-      </p>
 
       {notice && (
         <div className="mt-4">
           <AppNotice
-            tone={notice.tone}
-            message={notice.message}
-            onClose={notice.tone === "success" ? undefined : () => setNotice(null)}
+            tone="info"
+            message={notice}
+            onClose={() => setNotice("")}
           />
         </div>
       )}
 
       <AppButton type="submit" className="mt-6 w-full" isDisabled={locked}>
-        {submitting ? "Signing up..." : "Sign up"}
+        Continue
       </AppButton>
 
       <div className="mt-4 flex items-center gap-3 text-xs text-[var(--cg-muted)]">
@@ -316,7 +358,7 @@ function SignupForm({ role }: { role: SignupRole }) {
         isDisabled={locked}
         onPress={() => {
           if (locked) return;
-          setNotice({ tone: "info", message: "Continue with Google is coming soon." });
+          setNotice("Continue with Google is coming soon.");
         }}
       >
         <img

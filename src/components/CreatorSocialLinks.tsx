@@ -3,7 +3,7 @@ import { Modal } from "@heroui/react";
 import { Globe, X } from "lucide-react";
 import {
   isSocialPlatform,
-  readSocialLink,
+  readSignupLink,
   socialLinkSummary,
   socialPlatforms,
   type CreatorSocialLink,
@@ -23,6 +23,12 @@ type Props = {
   note?: string;
 };
 
+function PlatformMark({ platform }: { platform: Platform }) {
+  return platform.icon
+    ? <img src={platform.icon} alt="" width={20} height={20} className="h-5 w-5 shrink-0" />
+    : <Globe size={20} aria-hidden="true" className="shrink-0 text-[var(--cg-primary)]" />;
+}
+
 function ProfileChoice({ platform, url, disabled, onPress }: {
   platform: Platform;
   url?: string;
@@ -32,15 +38,13 @@ function ProfileChoice({ platform, url, disabled, onPress }: {
   return (
     <button
       type="button"
-      className="creator-social-choice"
+      className="creator-social-choice h-full"
       aria-pressed={Boolean(url)}
       title={url}
       disabled={disabled}
       onClick={onPress}
     >
-      {platform.icon
-        ? <img src={platform.icon} alt="" width={20} height={20} className="shrink-0" />
-        : <Globe size={20} aria-hidden="true" className="shrink-0 text-[var(--cg-primary)]" />}
+      <PlatformMark platform={platform} />
       <span className="min-w-0">
         <span className="block truncate">{platform.label}</span>
         {url && (
@@ -105,7 +109,7 @@ export function CreatorSocialLinks({
         nextLinks.push({ platform: id, url: draft.value });
         continue;
       }
-      const result = readSocialLink(id, draft.value);
+      const result = readSignupLink(id, draft.value);
       if (result.status === "error") {
         nextDrafts[id] = { ...draft, error: result.error };
         firstInvalid ??= id;
@@ -143,15 +147,13 @@ export function CreatorSocialLinks({
 
   return (
     <section className="flex flex-col gap-3">
-      <div>
-        <h2 className="m-0 text-sm font-medium text-[var(--cg-text)]">Social media profiles</h2>
-        {note !== "" && (
-          <p id={noteId} className="mt-1 text-xs text-[var(--cg-muted)]">{note}</p>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Social media profiles"
-        aria-describedby={note ? noteId : undefined} aria-disabled={disabled}>
-        {primary.map(choice)}
+      <h2 className="m-0 text-sm font-medium text-[var(--cg-text)]">Social media profiles</h2>
+      <div className="flex flex-col gap-1.5">
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Social media profiles"
+          aria-describedby={note ? noteId : undefined} aria-disabled={disabled}>
+          {primary.map(choice)}
+        </div>
+        {note && <p id={noteId} className="m-0 text-xs text-[var(--cg-muted)]">{note}</p>}
       </div>
       {extras.length > 0 && (
         <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Additional profiles">
@@ -176,7 +178,12 @@ export function CreatorSocialLinks({
                     return (
                       <div key={platform.id} className="relative">
                         <AppInput
-                          label={<span className="block pr-16">{platform.inputLabel}</span>}
+                          label={
+                            <span className="flex items-center gap-2 pr-16">
+                              <PlatformMark platform={platform} />
+                              <span className="min-w-0">{platform.inputLabel}</span>
+                            </span>
+                          }
                           name={platform.id}
                           value={draft.value}
                           onChange={(value) => setDrafts((current) => current && ({ ...current, [platform.id]: { value } }))}

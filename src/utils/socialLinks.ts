@@ -158,7 +158,7 @@ function profileUrl(
   return { url: url.href };
 }
 
-export function readSocialLink(
+export function readSignupLink(
   platformId: SocialPlatformId,
   raw: string,
 ): { status: "empty" } | { status: "error"; error: string } | { status: "ok"; url: string } {
@@ -182,7 +182,7 @@ export function readSocialLink(
   return { status: "error", error: normalized.error };
 }
 
-export function requiredCreatorLinkError(links: readonly SignupSocialLink[]) {
+export function requiredCreatorLinkError(links: readonly CreatorSocialLink[]) {
   if (links.length === 0) return "Add at least one link to continue";
   if (links.some(({ platform }) => platforms[platform].group === "primary")) return "";
   return "Add an Instagram, TikTok, YouTube, or Facebook link to continue";
