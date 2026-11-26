@@ -1,9 +1,11 @@
 export type SocialPlatformId = keyof typeof platforms;
 
-export type SignupSocialLink = {
+export type CreatorSocialLink = {
   platform: SocialPlatformId;
   url: string;
 };
+
+export type SignupSocialLink = CreatorSocialLink;
 
 type PlatformDefinition = {
   label: string;
@@ -180,7 +182,7 @@ export function readSignupLink(
   return { status: "error", error: normalized.error };
 }
 
-export function requiredCreatorLinkError(links: readonly SignupSocialLink[]) {
+export function requiredCreatorLinkError(links: readonly CreatorSocialLink[]) {
   if (links.length === 0) return "Add at least one link to continue";
   if (links.some(({ platform }) => platforms[platform].group === "primary")) return "";
   return "Add an Instagram, TikTok, YouTube, or Facebook link to continue";
