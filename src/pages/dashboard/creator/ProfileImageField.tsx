@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { AppAvatar } from "../../../components";
-import { profileImageProblem } from "../../../api/creatorProfile";
+import { profileImageProblem } from "../../../utils/profileImage";
 
 export function ProfileImageField({
   name,

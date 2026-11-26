@@ -1,325 +1,187 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Modal } from "@heroui/react";
-import { Check, X } from "lucide-react";
+import { Globe, X } from "lucide-react";
+import {
+  acceptSocialLink,
+  isSocialPlatform,
+  socialLinkSummary,
+  socialPlatform,
+  socialPlatforms,
+  type CreatorSocialLink,
+  type SocialPlatformId,
+} from "../utils/socialLinks";
 import { AppButton } from "./ui/Buttons";
-import { AppInput } from "./ui/Fields";
+import { AppInput, AppSelect } from "./ui/Fields";
+import "./CreatorSocialLinks.css";
 
-// Controlled profile links. Parents own the list so signup, Google onboarding,
-// and profile editing can share this component without storing anything here.
-export type SocialPlatform =
-  | "instagram"
-  | "tiktok"
-  | "youtube"
-  | "twitch"
-  | "x"
-  | "facebook";
+export type { CreatorSocialLink } from "../utils/socialLinks";
 
-export type CreatorSocialLink = {
-  platform: SocialPlatform;
-  url: string;
-};
+type Platform = (typeof socialPlatforms)[number];
+type Row = CreatorSocialLink & { error?: string };
 
-export type CreatorSocialLinksProps = {
+type Props = {
   links: CreatorSocialLink[];
   onChange: (links: CreatorSocialLink[]) => void;
   disabled?: boolean;
   note?: string;
 };
 
-const platforms: {
-  id: SocialPlatform;
-  label: string;
-  example: string;
-  hosts: string[];
-}[] = [
-  {
-    id: "instagram",
-    label: "Instagram",
-    example: "https://instagram.com/yourname",
-    hosts: ["instagram.com"],
-  },
-  {
-    id: "tiktok",
-    label: "TikTok",
-    example: "https://www.tiktok.com/@yourname",
-    hosts: ["tiktok.com", "vm.tiktok.com"],
-  },
-  {
-    id: "youtube",
-    label: "YouTube",
-    example: "https://www.youtube.com/@yourname",
-    hosts: ["youtube.com", "m.youtube.com", "youtu.be"],
-  },
-  {
-    id: "twitch",
-    label: "Twitch",
-    example: "https://www.twitch.tv/yourname",
-    hosts: ["twitch.tv"],
-  },
-  {
-    id: "x",
-    label: "X / Twitter",
-    example: "https://x.com/yourname",
-    hosts: ["x.com", "twitter.com", "mobile.twitter.com"],
-  },
-  {
-    id: "facebook",
-    label: "Facebook",
-    example: "https://www.facebook.com/yourname",
-    hosts: ["facebook.com", "m.facebook.com"],
-  },
-];
-
-function platformById(id: SocialPlatform) {
-  return platforms.find((item) => item.id === id) ?? platforms[0];
+function ProfileChoice({ platform, url, disabled, onPress }: {
+  platform: Platform;
+  url?: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="creator-social-choice"
+      aria-pressed={Boolean(url)}
+      title={url}
+      disabled={disabled}
+      onClick={onPress}
+    >
+      {platform.icon
+        ? <img src={platform.icon} alt="" width={20} height={20} className="shrink-0" />
+        : <Globe size={20} aria-hidden="true" className="shrink-0 text-[var(--cg-primary)]" />}
+      <span className="min-w-0">
+        <span className="block truncate">{platform.label}</span>
+        {url && (
+          <span className="block truncate text-xs font-normal text-[var(--cg-muted)]">
+            {socialLinkSummary(platform.id, url)}
+          </span>
+        )}
+      </span>
+    </button>
+  );
 }
 
-function siteHost(url: URL) {
-  return url.hostname.toLowerCase().replace(/^www\./, "");
-}
+const primary = socialPlatforms.filter(({ group }) => group === "primary");
 
-export function profileLinkError(platformId: SocialPlatform, value: string) {
-  const platform = platformById(platformId);
-  const trimmed = value.trim();
-  if (!trimmed) return "Enter a profile link.";
+export function CreatorSocialLinks({ links, onChange, disabled = false, note }: Props) {
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const fields = useRef<HTMLDivElement>(null);
+  const focusTarget = useRef<SocialPlatformId | null>(null);
+  const saved = new Map(links.map(({ platform, url }) => [platform, url]));
+  const extras = socialPlatforms.filter(({ group, id }) => group === "additional" && saved.has(id));
+  const available = socialPlatforms.filter(({ id }) => !rows?.some((row) => row.platform === id));
 
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    return `Enter a full link, such as ${platform.example}.`;
-  }
+  useEffect(() => {
+    const id = focusTarget.current;
+    if (!rows || !id) return;
+    const frame = window.requestAnimationFrame(() => {
+      const input = fields.current?.querySelector<HTMLInputElement>('input[name="' + id + '"]');
+      if (input) {
+        input.focus();
+        focusTarget.current = null;
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [rows]);
 
-  if (url.username || url.password) {
-    return "Enter the public profile link, not login details.";
-  }
-  if (url.protocol !== "https:") {
-    return "Profile links must start with https://.";
-  }
-  if (!platform.hosts.includes(siteHost(url))) {
-    return `Enter a link from ${platform.label}, such as ${platform.example}.`;
-  }
-  if (url.pathname === "/" || url.pathname === "") {
-    return `Include the profile name, such as ${platform.example}.`;
-  }
-
-  return "";
-}
-
-// One link per platform. A later save for the same platform replaces the old URL.
-function replaceLink(
-  links: CreatorSocialLink[],
-  platform: SocialPlatform,
-  url: string | null,
-) {
-  const saved = new Map<SocialPlatform, string>();
-  for (const link of links) {
-    saved.set(link.platform, link.url);
-  }
-  if (url) saved.set(platform, url);
-  else saved.delete(platform);
-
-  return platforms
-    .filter((item) => saved.has(item.id))
-    .map((item) => ({ platform: item.id, url: saved.get(item.id) ?? "" }));
-}
-
-export function CreatorSocialLinks({
-  links,
-  onChange,
-  disabled = false,
-  note,
-}: CreatorSocialLinksProps) {
-  const [editing, setEditing] = useState<SocialPlatform>("instagram");
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState("");
-
-  const activePlatform = platformById(editing);
-  const savedUrl = links.find((link) => link.platform === editing)?.url;
-
-  function openPlatform(platform: SocialPlatform) {
-    if (disabled) return;
-    setEditing(platform);
-    setDraft(links.find((link) => link.platform === platform)?.url ?? "");
-    setError("");
-    setOpen(true);
-  }
-
-  function close() {
-    setOpen(false);
-    setError("");
+  function open(platform: SocialPlatformId) {
+    focusTarget.current = platform;
+    setRows(saved.has(platform) ? [...links] : [...links, { platform, url: "" }]);
   }
 
   function save() {
-    if (disabled) return;
-    const nextError = profileLinkError(editing, draft);
-    if (nextError) {
-      setError(nextError);
+    if (!rows || disabled) return;
+    const next = rows.map(({ platform, url }): Row => {
+      const value = url.trim();
+      // Leave saved API links intact when another platform is edited.
+      if (!value || value === saved.get(platform)) return { platform, url: value };
+      const result = acceptSocialLink(platform, value);
+      return "error" in result ? { platform, url, error: result.error } : { platform, url: result.url };
+    });
+    const firstError = next.find(({ error }) => error);
+    if (firstError) {
+      focusTarget.current = firstError.platform;
+      setRows(next);
       return;
     }
-    onChange(replaceLink(links, editing, draft.trim()));
-    close();
+    onChange(next.filter(({ url }) => url).map(({ platform, url }) => ({ platform, url })));
+    setRows(null);
   }
 
-  function remove(platform: SocialPlatform) {
-    if (disabled) return;
-    onChange(replaceLink(links, platform, null));
-    if (editing === platform) close();
+  function submitOnEnter(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
+    event.preventDefault();
+    save();
+  }
+
+  function choice(platform: Platform) {
+    return (
+      <ProfileChoice
+        key={platform.id}
+        platform={platform}
+        url={saved.get(platform.id)}
+        disabled={disabled}
+        onPress={() => open(platform.id)}
+      />
+    );
   }
 
   return (
     <section className="flex flex-col gap-3">
       <div>
-        <h2 className="m-0 text-sm font-medium text-[var(--cg-text)]">
-          Social media profiles
-        </h2>
-        <p className="mt-1 text-xs">
-          {note
-            ?? (disabled
-              ? "Social profiles are not available yet."
-              : "Optional. A saved link is not a login and does not verify the account.")}
-        </p>
+        <h2 className="m-0 text-sm font-medium text-[var(--cg-text)]">Social media profiles</h2>
+        {note !== "" && (
+          <p className="mt-1 text-xs text-[var(--cg-muted)]">
+            {note ?? (disabled ? "Social profiles are not available yet." : "Add links to your public profiles.")}
+          </p>
+        )}
       </div>
-
-      <div
-        className="grid grid-cols-2 gap-2"
-        role="group"
-        aria-label="Social media profiles"
-        aria-disabled={disabled}
-      >
-        {platforms.map((platform) => {
-          const added = links.some((link) => link.platform === platform.id);
-          return (
-            <button
-              key={platform.id}
-              type="button"
-              disabled={disabled}
-              aria-pressed={added}
-              onClick={() => openPlatform(platform.id)}
-              className={`flex min-h-12 items-center gap-2 rounded-xl border px-2.5 py-2 text-left ${
-                disabled
-                  ? "cursor-not-allowed border-[var(--cg-border)] bg-white text-[var(--cg-muted)]"
-                  : added
-                    ? "cursor-pointer border-[var(--cg-primary)] bg-[var(--cg-background)]"
-                    : "cursor-pointer border-[var(--cg-border)] bg-white hover:bg-[var(--cg-background)]"
-              }`}
-            >
-              <img
-                src={`/icons/social/${platform.id}.svg`}
-                alt=""
-                width={20}
-                height={20}
-                className={`h-5 w-5 shrink-0 ${disabled ? "opacity-40" : ""}`}
-              />
-              <span
-                className={`min-w-0 text-sm font-medium ${
-                  disabled ? "text-[var(--cg-muted)]" : "text-[var(--cg-primary-dark)]"
-                }`}
-              >
-                {platform.label}
-              </span>
-              {added && (
-                <Check
-                  size={16}
-                  className={`ml-auto shrink-0 ${
-                    disabled ? "text-[var(--cg-muted)]" : "text-[var(--cg-primary)]"
-                  }`}
-                  aria-hidden="true"
-                />
-              )}
-            </button>
-          );
-        })}
+      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Social media profiles">
+        {primary.map(choice)}
       </div>
-
-      {links.length > 0 && (
-        <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {platforms.map((platform) => {
-            const link = links.find((item) => item.platform === platform.id);
-            if (!link) return null;
-            return (
-              <li
-                key={platform.id}
-                className="flex items-center gap-2 rounded-xl bg-[var(--cg-background)] px-3 py-2"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-[var(--cg-primary-dark)]">
-                    {platform.label} added
-                  </span>
-                  <span className="block truncate text-xs text-[var(--cg-muted)]">
-                    {link.url.replace(/^https:\/\//, "")}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  className="shrink-0 cursor-pointer text-sm font-semibold text-[var(--cg-primary-dark)] disabled:cursor-not-allowed disabled:text-[var(--cg-muted)]"
-                  onClick={() => remove(platform.id)}
-                >
-                  Remove
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
+      {extras.map(choice)}
       <Modal>
-        <Modal.Backdrop
-          isOpen={open}
-          onOpenChange={(isOpen) => {
-            if (!isOpen) close();
-          }}
-        >
-          <Modal.Container size="md" placement="center">
-            <Modal.Dialog aria-label={`${activePlatform.label} profile link`}>
-              <Modal.Header>
+        <Modal.Backdrop isOpen={rows !== null} onOpenChange={(open) => { if (!open) setRows(null); }}>
+          <Modal.Container size="sm" placement="center">
+            <Modal.Dialog aria-label="Social media profiles" className="creator-social-dialog">
+              <Modal.Header className="shrink-0">
                 <Modal.Heading className="text-lg font-bold text-[var(--cg-primary-dark)]">
-                  {activePlatform.label}
+                  Social media profiles
                 </Modal.Heading>
-                <Modal.CloseTrigger>
-                  <X size={18} aria-hidden="true" />
-                </Modal.CloseTrigger>
+                <Modal.CloseTrigger><X size={18} aria-hidden="true" /></Modal.CloseTrigger>
               </Modal.Header>
-              <Modal.Body>
-                <p className="text-sm text-[var(--cg-muted)]">
-                  Paste the public profile link. This does not log in or verify
-                  that you own the account.
-                </p>
-                <div className="mt-4">
-                  <AppInput
-                    label="Profile link"
-                    type="url"
-                    value={draft}
-                    onChange={(value) => {
-                      setDraft(value);
-                      setError("");
-                    }}
-                    placeholder={activePlatform.example}
-                    error={error}
-                  />
+              <Modal.Body className="creator-social-body">
+                <div ref={fields} className="flex flex-col gap-4" onKeyDown={submitOnEnter}>
+                  {rows?.map((row) => {
+                    const platform = socialPlatform(row.platform);
+                    return (
+                      <div key={row.platform} className="relative">
+                        <AppInput label={platform.inputLabel} name={row.platform} value={row.url}
+                          onChange={(url) => setRows((current) => current?.map((item) =>
+                            item.platform === row.platform ? { platform: row.platform, url } : item) ?? null)}
+                          placeholder={platform.placeholder} helper={"Example: " + platform.example}
+                          error={row.error} disabled={disabled}
+                        />
+                        <button type="button" className="creator-social-remove" aria-label={"Remove " + platform.label}
+                          disabled={disabled}
+                          onClick={() => setRows((current) => current?.filter((item) => item.platform !== row.platform) ?? null)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {available.length > 0 && (
+                    <AppSelect label="Add another platform" name="additionalProfile" value=""
+                      onChange={(value) => {
+                        if (!isSocialPlatform(value) || !available.some(({ id }) => id === value)) return;
+                        focusTarget.current = value;
+                        setRows((current) => current && [...current, { platform: value, url: "" }]);
+                      }}
+                      options={available.map(({ id, label }) => ({ value: id, label }))}
+                      placeholder="Select a platform" disabled={disabled}
+                    />
+                  )}
                 </div>
-                <p className="mt-2 text-xs text-[var(--cg-muted)]">
-                  Example: {activePlatform.example}
-                </p>
-                {savedUrl && (
-                  <button
-                    type="button"
-                    className="mt-3 cursor-pointer text-sm font-semibold text-[var(--cg-error)]"
-                    onClick={() => remove(activePlatform.id)}
-                  >
-                    Remove link
-                  </button>
-                )}
               </Modal.Body>
-              <Modal.Footer>
-                <AppButton type="button" variant="secondary" onPress={close}>
-                  Cancel
-                </AppButton>
-                <AppButton type="button" onPress={save}>
-                  Save
-                </AppButton>
+              <Modal.Footer className="shrink-0">
+                <AppButton type="button" variant="secondary" onPress={() => setRows(null)}>Cancel</AppButton>
+                <AppButton type="button" onPress={save} isDisabled={disabled}>Save</AppButton>
               </Modal.Footer>
             </Modal.Dialog>
           </Modal.Container>

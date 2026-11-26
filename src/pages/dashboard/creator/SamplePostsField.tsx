@@ -1,8 +1,8 @@
 import { AppButton, AppInput, AppTextarea } from "../../../components";
-import { creatorProfileLimits } from "../../../api/creatorProfile";
 
 export type SamplePostDraft = {
   key: string;
+  postId: number | null;
   url: string;
   caption: string;
 };
@@ -16,19 +16,17 @@ export function SamplePostsField({
   onAdd,
 }: {
   posts: SamplePostDraft[];
-  errors: Record<string, { url?: string; caption?: string; row?: string }>;
+  errors: Record<string, { url?: string; caption?: string }>;
   disabled: boolean;
   onChange: (key: string, patch: Partial<Pick<SamplePostDraft, "url" | "caption">>) => void;
   onRemove: (key: string) => void;
   onAdd: () => void;
 }) {
-  const atLimit = posts.length >= creatorProfileLimits.samplePosts;
-
   return (
     <fieldset className="min-w-0 space-y-3">
       <legend className="text-sm font-medium text-[var(--cg-text)]">Sample posts</legend>
       <p className="text-xs text-[var(--cg-muted)]">
-        Add a link, a caption, or both. You can keep up to {creatorProfileLimits.samplePosts} posts.
+        Each sample post needs a link. Captions are optional.
       </p>
       {posts.length === 0 && (
         <p className="text-sm text-[var(--cg-muted)]">No sample posts yet.</p>
@@ -56,7 +54,7 @@ export function SamplePostsField({
                 onChange={(caption) => onChange(post.key, { caption })}
                 placeholder="What this post shows"
                 rows={3}
-                error={rowError?.caption || rowError?.row}
+                error={rowError?.caption}
                 disabled={disabled}
               />
             </div>
@@ -75,7 +73,7 @@ export function SamplePostsField({
         type="button"
         variant="secondary"
         className="w-full sm:w-auto"
-        isDisabled={disabled || atLimit}
+        isDisabled={disabled}
         onPress={onAdd}
       >
         Add sample post

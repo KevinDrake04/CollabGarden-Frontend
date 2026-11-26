@@ -5,23 +5,23 @@ import {
   AppSelect,
   AppTextarea,
   CreatorSocialLinks,
-  profileLinkError,
   type CreatorSocialLink,
 } from "../../../components";
 import { type County } from "../../../api/directory";
 import {
+  CreatorProfileError,
   creatorProfileLimits,
   creatorProfileSaveMessage,
   followerRanges,
   type CreatorProfile,
   type CreatorProfileUpdate,
-  type CreatorSamplePost,
+  type CreatorSamplePostEdit,
 } from "../../../api/creatorProfile";
 import { AccountField } from "../shared/workspaceSession";
 import { ProfileImageField } from "./ProfileImageField";
 import { SamplePostsField, type SamplePostDraft } from "./SamplePostsField";
 
-type PostErrors = { url?: string; caption?: string; row?: string };
+type PostErrors = { url?: string; caption?: string };
 
 type FieldErrors = {
   displayName?: string;
@@ -29,8 +29,6 @@ type FieldErrors = {
   bio?: string;
   countyId?: string;
   followerRange?: string;
-  social?: string;
-  samplePosts?: string;
   posts: Record<string, PostErrors>;
 };
 
@@ -48,27 +46,28 @@ const emptyErrors: FieldErrors = { posts: {} };
 
 let nextPostKey = 1;
 
-function postDraft(url = "", caption = ""): SamplePostDraft {
+function postDraft(url = "", caption = "", postId: number | null = null): SamplePostDraft {
   const key = `post-${nextPostKey}`;
   nextPostKey += 1;
-  return { key, url, caption };
+  return { key, url, caption, postId };
 }
 
-function draftFromProfile(profile: CreatorProfile | null, fallbackName: string): Draft {
+function draftFromProfile(profile: CreatorProfile): Draft {
   return {
-    displayName: profile?.display_name || fallbackName,
-    niche: profile?.niche ?? "",
-    bio: profile?.bio ?? "",
-    countyId: profile?.county_id == null ? "none" : String(profile.county_id),
-    followerRange: profile?.follower_range ?? "none",
-    socialLinks: (profile?.social_links ?? []).map((link) => ({ platform: link.platform, url: link.url })),
-    posts: (profile?.sample_posts ?? []).map((post) => postDraft(post.url ?? "", post.caption ?? "")),
+    displayName: profile.display_name,
+    niche: profile.niche ?? "",
+    bio: profile.bio ?? "",
+    countyId: profile.county_id == null ? "none" : String(profile.county_id),
+    followerRange: profile.follower_range ?? "none",
+    socialLinks: profile.social_links,
+    posts: profile.sample_posts.map((post) => postDraft(post.url, post.caption ?? "", post.post_id)),
   };
 }
 
 function postUrlError(value: string) {
   const trimmed = value.trim();
-  if (!trimmed) return "";
+  if (!trimmed) return "Enter a link for this sample post.";
+  if (!/^https?:\/\/\S+$/.test(trimmed)) return "Enter a full link starting with http:// or https://.";
   if (trimmed.length > creatorProfileLimits.postUrl) return "Use a link that is 500 characters or fewer.";
   let url: URL;
   try {
@@ -88,25 +87,24 @@ function validate(
   counties: County[],
   originalCountyId: number | null,
   originalFollowerRange: string | null,
-  imageError: string,
 ) {
   const errors: FieldErrors = { posts: {} };
   const displayName = draft.displayName.trim();
   if (!displayName) errors.displayName = "Enter a display name.";
   else if (displayName.length > creatorProfileLimits.displayName) {
-    errors.displayName = "Use 80 characters or fewer for the display name.";
+    errors.displayName = "Use 100 characters or fewer for the display name.";
   }
 
   const niche = draft.niche.trim();
-  if (niche.length > creatorProfileLimits.niche) errors.niche = "Use 80 characters or fewer for the niche.";
+  if (niche.length > creatorProfileLimits.niche) errors.niche = "Use 60 characters or fewer for the niche.";
 
   const bio = draft.bio.trim();
-  if (bio.length > creatorProfileLimits.bio) errors.bio = "Use 500 characters or fewer for the bio.";
+  if (bio.length > creatorProfileLimits.bio) errors.bio = "Use 2000 characters or fewer for the bio.";
 
   if (draft.countyId !== "none") {
     const countyId = Number(draft.countyId);
     const known = counties.some((county) => county.county_id === countyId);
-    const keptOriginal = counties.length === 0 && originalCountyId != null && String(originalCountyId) === draft.countyId;
+    const keptOriginal = countyId === originalCountyId;
     if (!Number.isInteger(countyId) || (!known && !keptOriginal)) {
       errors.countyId = "Choose a county from the list.";
     }
@@ -118,98 +116,56 @@ function validate(
     errors.followerRange = "Choose a follower range from the list.";
   }
 
-  const seen = new Set<string>();
-  for (const link of draft.socialLinks) {
-    if (seen.has(link.platform)) {
-      errors.social = "Add each social profile once.";
-      break;
-    }
-    seen.add(link.platform);
-    const linkError = profileLinkError(link.platform, link.url);
-    if (linkError) {
-      errors.social = linkError;
-      break;
-    }
-  }
-
-  if (draft.posts.length > creatorProfileLimits.samplePosts) {
-    errors.samplePosts = `You can add up to ${creatorProfileLimits.samplePosts} sample posts.`;
-  }
   for (const post of draft.posts) {
     const url = post.url.trim();
     const caption = post.caption.trim();
     const row: PostErrors = {};
     const urlError = postUrlError(url);
     if (urlError) row.url = urlError;
-    if (caption.length > creatorProfileLimits.caption) row.caption = "Use 280 characters or fewer for the caption.";
-    if (!url && !caption) row.row = "Enter a link, a caption, or remove this post.";
-    if (row.url || row.caption || row.row) errors.posts[post.key] = row;
+    if (caption.length > creatorProfileLimits.caption) row.caption = "Use 500 characters or fewer for the caption.";
+    if (row.url || row.caption) errors.posts[post.key] = row;
   }
 
-  return { errors, imageBlocks: Boolean(imageError) };
+  return errors;
 }
 
-function hasErrors(errors: FieldErrors, imageBlocks: boolean) {
-  return Boolean(
-    imageBlocks
-    || errors.displayName
-    || errors.niche
-    || errors.bio
-    || errors.countyId
-    || errors.followerRange
-    || errors.social
-    || errors.samplePosts
-    || Object.keys(errors.posts).length > 0,
-  );
-}
-
-function toUpdate(draft: Draft, counties: County[], originalCountyId: number | null): CreatorProfileUpdate {
-  const posts: CreatorSamplePost[] = draft.posts.map((post) => ({
-    url: post.url.trim() || null,
-    caption: post.caption.trim() || null,
-  }));
-  let countyId: number | null = null;
-  if (draft.countyId !== "none") {
-    const parsed = Number(draft.countyId);
-    const known = counties.some((county) => county.county_id === parsed);
-    const keptOriginal = counties.length === 0 && originalCountyId != null && String(originalCountyId) === draft.countyId;
-    if (Number.isInteger(parsed) && (known || keptOriginal)) countyId = parsed;
-  }
+function toUpdate(draft: Draft): CreatorProfileUpdate {
   return {
     display_name: draft.displayName.trim(),
     bio: draft.bio.trim() || null,
     niche: draft.niche.trim() || null,
-    county_id: countyId,
+    county_id: draft.countyId === "none" ? null : Number(draft.countyId),
     follower_range: draft.followerRange === "none" ? null : draft.followerRange,
-    social_links: draft.socialLinks.map((link) => ({ platform: link.platform, url: link.url.trim() })),
-    sample_posts: posts,
+    social_links: draft.socialLinks,
   };
 }
 
 export function CreatorProfileForm({
   email,
   profile,
-  fallbackName,
   counties,
   onCancel,
+  onReload,
   onSave,
 }: {
   email: string;
-  profile: CreatorProfile | null;
-  fallbackName: string;
+  profile: CreatorProfile;
   counties: County[];
   onCancel: () => void;
-  onSave: (update: CreatorProfileUpdate, photo: File | null) => Promise<void>;
+  onReload: () => void;
+  onSave: (update: CreatorProfileUpdate, posts: CreatorSamplePostEdit[], photo: File | null) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState(() => draftFromProfile(profile, fallbackName));
+  const [draft, setDraft] = useState(() => draftFromProfile(profile));
   const [errors, setErrors] = useState<FieldErrors>(emptyErrors);
   const [image, setImage] = useState<File | null>(null);
   const [imageError, setImageError] = useState("");
   const [alert, setAlert] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [reloadRequired, setReloadRequired] = useState(false);
+  const visibleAlert = alert || (reloadRequired ? "Reload the profile before saving again." : "");
   const lock = useRef(false);
   const alertRef = useRef<HTMLParagraphElement>(null);
-  const originalCountyId = profile?.county_id ?? null;
+  const originalCountyId = profile.county_id;
 
   useEffect(() => {
     if (!alert) return;
@@ -220,8 +176,8 @@ export function CreatorProfileForm({
   for (const county of counties) {
     countyOptions.push({ value: String(county.county_id), label: county.name });
   }
-  if (draft.countyId !== "none" && !countyOptions.some((option) => option.value === draft.countyId)) {
-    countyOptions.push({ value: draft.countyId, label: `County ${draft.countyId}` });
+  if (originalCountyId != null && !counties.some((county) => county.county_id === originalCountyId)) {
+    countyOptions.push({ value: String(originalCountyId), label: `County ${originalCountyId}` });
   }
 
   const followerOptions = [
@@ -242,10 +198,11 @@ export function CreatorProfileForm({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (lock.current) return;
-    const result = validate(draft, counties, originalCountyId, profile?.follower_range ?? null, imageError);
-    setErrors(result.errors);
-    if (hasErrors(result.errors, result.imageBlocks)) {
+    if (lock.current || reloadRequired) return;
+    const errors = validate(draft, counties, originalCountyId, profile.follower_range);
+    setErrors(errors);
+    const { posts: postErrors, ...fieldErrors } = errors;
+    if (imageError || Object.values(fieldErrors).some(Boolean) || Object.keys(postErrors).length) {
       setAlert(imageError || "Check the highlighted fields and try again.");
       return;
     }
@@ -254,8 +211,22 @@ export function CreatorProfileForm({
     setSubmitting(true);
     setAlert("");
     try {
-      await onSave(toUpdate(draft, counties, originalCountyId), image);
+      const posts = draft.posts.map((post) => ({
+        post_id: post.postId,
+        url: post.url.trim(),
+        caption: post.caption.trim() || null,
+      }));
+      await onSave(toUpdate(draft), posts, image);
     } catch (error) {
+      if (error instanceof CreatorProfileError && error.reloadRequired) setReloadRequired(true);
+      if (error instanceof CreatorProfileError && error.createdPostIds.size) {
+        setDraft((current) => ({
+          ...current,
+          posts: current.posts.map((post, index) => ({
+            ...post, postId: error.createdPostIds.get(index) ?? post.postId,
+          })),
+        }));
+      }
       setAlert(creatorProfileSaveMessage(error));
     } finally {
       lock.current = false;
@@ -270,8 +241,8 @@ export function CreatorProfileForm({
         <AccountField label="Email">{email}</AccountField>
       </dl>
       <ProfileImageField
-        name={draft.displayName || fallbackName || email}
-        savedUrl={profile?.photo_url ?? null}
+        name={draft.displayName || profile.display_name}
+        savedUrl={profile.photo_url ?? null}
         file={image}
         error={imageError}
         disabled={submitting}
@@ -345,16 +316,10 @@ export function CreatorProfileForm({
       </div>
       <CreatorSocialLinks
         links={draft.socialLinks}
-        onChange={(socialLinks) => patchDraft({ socialLinks }, "social")}
+        onChange={(socialLinks) => patchDraft({ socialLinks })}
         disabled={submitting}
         note="Optional. A saved link is not a login and does not verify the account."
       />
-      {errors.social && (
-        <p role="alert" className="text-xs text-[var(--cg-error)]">{errors.social}</p>
-      )}
-      {errors.samplePosts && (
-        <p role="alert" className="text-xs text-[var(--cg-error)]">{errors.samplePosts}</p>
-      )}
       <SamplePostsField
         posts={draft.posts}
         errors={errors.posts}
@@ -381,20 +346,19 @@ export function CreatorProfileForm({
           setAlert("");
         }}
         onAdd={() => {
-          if (draft.posts.length >= creatorProfileLimits.samplePosts) return;
           setDraft((current) => ({ ...current, posts: [...current.posts, postDraft()] }));
           setAlert("");
         }}
       />
-      {alert && (
-        <p ref={alertRef} role="alert" className="text-sm text-[var(--cg-error)]">{alert}</p>
+      {visibleAlert && (
+        <p ref={alertRef} role="alert" className="text-sm text-[var(--cg-error)]">{visibleAlert}</p>
       )}
       <div className="flex flex-wrap gap-3">
-        <AppButton type="submit" isDisabled={submitting}>
+        <AppButton type="submit" isDisabled={submitting || reloadRequired}>
           {submitting ? "Saving..." : "Save changes"}
         </AppButton>
-        <AppButton type="button" variant="secondary" isDisabled={submitting} onPress={onCancel}>
-          Cancel
+        <AppButton type="button" variant="secondary" isDisabled={submitting} onPress={reloadRequired ? onReload : onCancel}>
+          {reloadRequired ? "Reload profile" : "Cancel"}
         </AppButton>
       </div>
     </form>
