@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ClipboardList, List, Megaphone } from "lucide-react";
 import {
@@ -14,10 +14,10 @@ import {
   CollaborationApiError,
   collaborationErrorMessage,
   deliverableStatusCounts,
-  loadCollaborationWorkspace,
+  loadCampaignDeliverables,
   type CampaignAccess,
 } from "../../../api/collaborations";
-import { listCampaigns, type Campaign } from "../../../api/campaigns";
+import { CampaignApiError, listCampaigns, type Campaign } from "../../../api/campaigns";
 import { getBusiness, getCounties, type Business, type County } from "../../../api/directory";
 import { expireSession } from "../../auth/session";
 import { CampaignApplications } from "./CampaignApplications";
@@ -35,12 +35,12 @@ import {
 type CampaignLoad =
   | { status: "idle" | "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; campaigns: Campaign[]; counties: County[]; profile: Business | null };
+  | { status: "ready"; campaigns: Campaign[]; counties: County[] };
 
 type DeliverableLoad =
   | { status: "idle" | "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; access: CampaignAccess[] };
+  | { status: "ready"; businessId: number; access: CampaignAccess[] };
 
 function isAbort(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
@@ -84,66 +84,78 @@ export function CampaignStack({
 export default function BusinessDashboard() {
   const { session, accountState, accountError, retry } = useWorkspaceSession();
   const ids = session?.role === "business" ? verifiedBusinessIds(session) : [];
-  const businessKey = ids.join(",");
+  const hasBusinesses = ids.length > 0;
   const ready = accountState === "ready" && session?.role === "business";
   const { selected, choose } = useSelectedBusiness(session?.userId ?? null, ids, session?.businessId ?? null, ready);
   const names = useBusinessNames(ready ? ids : []);
   const [campaignLoad, setCampaignLoad] = useState<CampaignLoad>({ status: "idle" });
   const [campaignAttempt, setCampaignAttempt] = useState(0);
+  const [profile, setProfile] = useState<Business | null>(null);
   const [deliverables, setDeliverables] = useState<DeliverableLoad>({ status: "idle" });
   const [deliverableAttempt, setDeliverableAttempt] = useState(0);
+  const selectedCampaigns = useMemo(() => campaignLoad.status === "ready"
+    ? campaignLoad.campaigns.filter((campaign) => campaign.business_id === selected)
+    : null, [campaignLoad, selected]);
 
   useEffect(() => {
-    const allowed = businessKey ? businessKey.split(",").map(Number) : [];
-    if (!ready || !session || selected == null || !allowed.includes(selected)) {
+    if (!ready || !session || !hasBusinesses) {
       setCampaignLoad({ status: "idle" });
       return;
     }
     const controller = new AbortController();
-    const businessId = selected;
     setCampaignLoad({ status: "loading" });
     Promise.all([
-      listCampaigns({ signal: controller.signal, token: session.accessToken }),
+      listCampaigns({ signal: controller.signal, token: session.accessToken, cache: "no-store" }),
       getCounties(controller.signal).catch((error: unknown) => {
         if (isAbort(error)) throw error;
         return [] as County[];
       }),
-      getBusiness(businessId, controller.signal).catch((error: unknown) => {
-        if (isAbort(error)) throw error;
-        return null;
-      }),
     ])
-      .then(([campaigns, counties, profile]) => {
+      .then(([campaigns, counties]) => {
         if (controller.signal.aborted) return;
         setCampaignLoad({
           status: "ready",
-          campaigns: campaigns
-            .filter((campaign) => campaign.business_id === businessId)
-            .sort((left, right) => left.campaign_id - right.campaign_id),
+          campaigns: campaigns.sort((left, right) => left.campaign_id - right.campaign_id),
           counties,
-          profile: profile && profile.business_id === businessId ? profile : null,
         });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || isAbort(error)) return;
+        if (error instanceof CampaignApiError && error.status === 401) {
+          expireSession();
+          return;
+        }
         setCampaignLoad({
           status: "error",
           message: error instanceof Error && error.message ? error.message : "Couldn't load this dashboard.",
         });
       });
     return () => controller.abort();
-  }, [ready, session, selected, businessKey, campaignAttempt]);
+  }, [ready, session, hasBusinesses, campaignAttempt]);
 
   useEffect(() => {
-    if (!ready || !session) {
+    if (!ready || selected == null) return;
+    const controller = new AbortController();
+    getBusiness(selected, controller.signal)
+      .then((business) => {
+        if (!controller.signal.aborted) setProfile(business.business_id === selected ? business : null);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setProfile(null);
+      });
+    return () => controller.abort();
+  }, [ready, selected]);
+
+  useEffect(() => {
+    if (!ready || !session || selected == null || !selectedCampaigns) {
       setDeliverables({ status: "idle" });
       return;
     }
     const controller = new AbortController();
     setDeliverables({ status: "loading" });
-    loadCollaborationWorkspace(session, controller.signal, { includeCreatorNames: false })
-      .then((workspace) => {
-        if (!controller.signal.aborted) setDeliverables({ status: "ready", access: workspace.access });
+    loadCampaignDeliverables(selectedCampaigns, session, controller.signal)
+      .then((access) => {
+        if (!controller.signal.aborted) setDeliverables({ status: "ready", businessId: selected, access });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || isAbort(error)) return;
@@ -155,7 +167,7 @@ export default function BusinessDashboard() {
         setDeliverables({ status: "error", message: collaborationErrorMessage(error) });
       });
     return () => controller.abort();
-  }, [ready, session, deliverableAttempt]);
+  }, [ready, session, selected, selectedCampaigns, deliverableAttempt]);
 
   if (!session || session.role !== "business") {
     return (
@@ -169,22 +181,18 @@ export default function BusinessDashboard() {
     );
   }
 
-  const profile = campaignLoad.status === "ready" ? campaignLoad.profile : null;
-  const knownName = profile?.name?.trim() || (selected != null ? names.get(selected) : undefined);
-  const campaigns = campaignLoad.status === "ready"
-    ? campaignLoad.campaigns.filter((campaign) => campaign.business_id === selected)
-    : [];
-  const openCount = campaignLoad.status === "ready"
-    ? campaigns.filter((campaign) => campaign.status === "open").length
-    : null;
-  const scopedDeliverables = deliverables.status === "ready" && selected != null
-    ? deliverables.access.filter((entry) => entry.campaign.business_id === selected)
+  const selectedProfile = profile?.business_id === selected ? profile : null;
+  const knownName = selectedProfile?.name.trim() || (selected != null ? names.get(selected) : undefined);
+  const campaigns = selectedCampaigns ?? [];
+  const openCount = selectedCampaigns ? campaigns.filter((campaign) => campaign.status === "open").length : null;
+  const scopedDeliverables = deliverables.status === "ready" && deliverables.businessId === selected
+    ? deliverables.access
     : null;
   const submittedCount = scopedDeliverables ? deliverableStatusCounts(scopedDeliverables).submitted : null;
   const query = businessSearch(selected);
   let deliverableStatus: "loading" | "error" | "ready" = "loading";
-  if (deliverables.status === "error") deliverableStatus = "error";
-  if (deliverables.status === "ready" && selected != null) deliverableStatus = "ready";
+  if (deliverables.status === "error" || campaignLoad.status === "error") deliverableStatus = "error";
+  if (scopedDeliverables) deliverableStatus = "ready";
 
   return (
     <div className="flex flex-col gap-8">
@@ -193,8 +201,8 @@ export default function BusinessDashboard() {
           <h1 className={titleClass}>
             {ready && knownName ? `Welcome, ${knownName}` : "Welcome"}
           </h1>
-          {profile?.description?.trim() && (
-            <p className="mt-2 text-base text-[var(--cg-muted)]">{profile.description.trim()}</p>
+          {selectedProfile?.description?.trim() && (
+            <p className="mt-2 text-base text-[var(--cg-muted)]">{selectedProfile.description.trim()}</p>
           )}
         </div>
         {ready && (
@@ -266,8 +274,11 @@ export default function BusinessDashboard() {
             <DeliverableOverview
               status={deliverableStatus}
               access={scopedDeliverables ?? []}
-              message={deliverables.status === "error" ? deliverables.message : ""}
-              onRetry={() => setDeliverableAttempt((value) => value + 1)}
+              message={campaignLoad.status === "error" ? campaignLoad.message : deliverables.status === "error" ? deliverables.message : ""}
+              onRetry={() => {
+                if (campaignLoad.status === "error") setCampaignAttempt((value) => value + 1);
+                else setDeliverableAttempt((value) => value + 1);
+              }}
               emptyMessage="No deliverables were returned for this business."
               actionHref={`/dashboard/business/review${query}`}
               actionLabel="Review deliverables"

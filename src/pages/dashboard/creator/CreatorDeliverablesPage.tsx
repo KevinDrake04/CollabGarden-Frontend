@@ -20,16 +20,19 @@ import {
   collaborationErrorMessage,
   createDeliverable,
   submitDeliverable,
+  updateDeliverable,
   upsertDeliverable,
   type CollaborationWorkspace,
   type Deliverable,
 } from "../../../api/collaborations";
 import { dashboardPath } from "../../auth/session";
+import { DeliverableFeedback } from "../shared/DeliverableFeedback";
 import { clearSessionIfUnauthorized, useRoleWorkspace } from "../shared/useRoleWorkspace";
 import { linkClass, signedInAs, textLinkClass, titleClass } from "../shared/workspaceSession";
 
 type Feedback = { tone: "success" | "error"; message: string };
-type Pending = { action: "draft" | "submit"; id?: number };
+type Pending = { action: "save" | "submit"; id?: number };
+type Editor = { kind: "new" } | { kind: "edit"; deliverable: Deliverable };
 
 const pageClass = "flex w-full flex-col gap-6 text-[var(--cg-text)]";
 const headingClass = "text-xl font-semibold text-[var(--cg-primary-dark)]";
@@ -46,7 +49,7 @@ function LoadingBlock({ label }: { label: string }) {
 
 export default function CreatorDeliverablesPage() {
   const returnPath = "/dashboard/creator/deliverables";
-  const { view, workspace, reload, updateAccess } = useRoleWorkspace("creator");
+  const { view, reload, updateAccess } = useRoleWorkspace("creator");
 
   return (
     <div className={pageClass}>
@@ -103,8 +106,8 @@ export default function CreatorDeliverablesPage() {
         </div>
       )}
 
-      {view.kind === "ready" && workspace && (
-        <CreatorWorkspace workspace={workspace} onAccess={updateAccess} reload={reload} />
+      {view.kind === "ready" && (
+        <CreatorWorkspace workspace={view.workspace} onAccess={updateAccess} reload={reload} />
       )}
     </div>
   );
@@ -123,8 +126,7 @@ function CreatorWorkspace({
 }) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [formError, setFormError] = useState("");
-  const [open, setOpen] = useState(false);
-  const [formKey, setFormKey] = useState(0);
+  const [editor, setEditor] = useState<Editor | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const busy = useRef(false);
   const available = workspace.access.filter((entry) => !entry.error);
@@ -133,6 +135,13 @@ function CreatorWorkspace({
     ? "Add a deliverable once a campaign is available."
     : "";
   const formPending = pending && pending.id == null ? pending.action : null;
+  const editing = editor?.kind === "edit" ? editor.deliverable : null;
+  const editorTitle = editing ? "Edit deliverable" : "Add deliverable";
+
+  function openEditor(next: Editor) {
+    setFormError("");
+    setEditor(next);
+  }
 
   function showFeedback(next: Feedback) {
     setFeedback(next);
@@ -145,64 +154,75 @@ function CreatorWorkspace({
     onAccess((access) => upsertDeliverable(access, deliverable));
   }
 
-  async function save(input: DeliverableInput, action: "draft" | "submit") {
-    if (busy.current) return;
-    const campaignId = Number(input.campaignId);
-    if (!Number.isInteger(campaignId)) {
-      setFormError("Choose a campaign.");
-      return;
-    }
+  async function save(input: DeliverableInput, action: "save" | "submit") {
+    if (busy.current || !editor) return;
 
     busy.current = true;
     setPending({ action });
     setFormError("");
     setFeedback(null);
+    let saved: Deliverable | null = null;
     try {
-      const created = await createDeliverable(
-        campaignId,
-        {
-          title: input.title,
-          description: input.description || null,
-          attachments: input.attachments.map((attachment) => ({
-            attachment_type: attachment.type,
-            url: attachment.url,
-          })),
-        },
-        workspace.session.accessToken,
-      );
-      place(created);
-      if (action === "draft") {
-        setOpen(false);
-        showFeedback({
-          tone: "success",
-          message: `Draft saved for "${created.title}". Status is ${deliverableStatusLabel(created.status)}.`,
-        });
-        return;
+      const token = workspace.session.accessToken;
+      const content = {
+        title: input.title,
+        description: input.description || null,
+        attachments: input.attachments.map((attachment) => ({
+          attachment_type: attachment.type,
+          url: attachment.url,
+        })),
+      };
+      if (editing) {
+        const attachmentsChanged = content.attachments.length !== editing.attachments.length ||
+          content.attachments.some((attachment, index) => {
+            const previous = editing.attachments[index];
+            return attachment.attachment_type !== previous.attachment_type || attachment.url !== previous.url;
+          });
+        const changes = {
+          ...(content.title !== editing.title.trim() && { title: content.title }),
+          ...(input.description !== (editing.description ?? "").trim() && { description: content.description }),
+          ...(attachmentsChanged && { attachments: content.attachments }),
+        };
+        if (Object.keys(changes).length > 0) {
+          saved = await updateDeliverable(editing.deliverable_id, changes, token);
+        }
+      } else {
+        saved = await createDeliverable(Number(input.campaignId), content, token);
       }
+      if (saved) place(saved);
 
-      try {
-        const submitted = await submitDeliverable(created.deliverable_id, workspace.session.accessToken);
-        place(submitted);
-        setOpen(false);
+      const target = saved ?? editing;
+      if (action === "submit" && target) {
+        await submit(target);
+      } else if (saved) {
         showFeedback({
           tone: "success",
-          message: `Submit finished for "${submitted.title}". Status is ${deliverableStatusLabel(submitted.status)}.`,
-        });
-      } catch (error) {
-        if (clearSessionIfUnauthorized(error)) return;
-        setOpen(false);
-        showFeedback({
-          tone: "error",
-          message: `Draft saved for "${created.title}" with status ${deliverableStatusLabel(created.status)}. Submit failed: ${collaborationErrorMessage(error)}`,
+          message: `${editing ? "Changes saved" : "Draft saved"} for "${saved.title}". Status is ${deliverableStatusLabel(saved.status)}.`,
         });
       }
+      setEditor(null);
     } catch (error) {
       if (clearSessionIfUnauthorized(error)) return;
-      setFormError(collaborationErrorMessage(error));
+      const message = collaborationErrorMessage(error);
+      if (saved) {
+        setEditor(null);
+        showFeedback({ tone: "error", message: `Saved "${saved.title}". Submission failed. ${message}` });
+      } else {
+        setFormError(message);
+      }
     } finally {
       busy.current = false;
       setPending(null);
     }
+  }
+
+  async function submit(deliverable: Deliverable) {
+    const updated = await submitDeliverable(deliverable.deliverable_id, workspace.session.accessToken);
+    place(updated);
+    showFeedback({
+      tone: "success",
+      message: `${deliverable.status === "revision_requested" ? "Resubmitted" : "Submitted"} "${updated.title}".`,
+    });
   }
 
   async function submitExisting(deliverable: Deliverable) {
@@ -211,12 +231,7 @@ function CreatorWorkspace({
     setPending({ action: "submit", id: deliverable.deliverable_id });
     setFeedback(null);
     try {
-      const updated = await submitDeliverable(deliverable.deliverable_id, workspace.session.accessToken);
-      place(updated);
-      showFeedback({
-        tone: "success",
-        message: `Submit finished for "${updated.title}". Status is ${deliverableStatusLabel(updated.status)}.`,
-      });
+      await submit(deliverable);
     } catch (error) {
       if (clearSessionIfUnauthorized(error)) return;
       showFeedback({ tone: "error", message: collaborationErrorMessage(error) });
@@ -227,10 +242,16 @@ function CreatorWorkspace({
   }
 
   const initialValues: DeliverableFormValues = {
-    campaignId: available[0] ? String(available[0].campaign.campaign_id) : "",
-    title: "",
-    description: "",
-    attachments: [{ key: "attachment-1", type: "link", url: "" }],
+    campaignId: String(editing?.campaign_id ?? available[0]?.campaign.campaign_id ?? ""),
+    title: editing?.title ?? "",
+    description: editing?.description ?? "",
+    attachments: editing
+      ? editing.attachments.map((attachment, index) => ({
+          key: `attachment-${index + 1}`,
+          type: attachment.attachment_type,
+          url: attachment.url,
+        }))
+      : [{ key: "attachment-1", type: "link", url: "" }],
   };
 
   return (
@@ -291,11 +312,7 @@ function CreatorWorkspace({
       <div className="flex flex-col items-start gap-2">
         <AppButton
           isDisabled={Boolean(addReason) || pending !== null}
-          onPress={() => {
-            setFormError("");
-            setFormKey((value) => value + 1);
-            setOpen(true);
-          }}
+          onPress={() => openEditor({ kind: "new" })}
         >
           Add deliverable
         </AppButton>
@@ -305,37 +322,36 @@ function CreatorWorkspace({
       <StatusGroups
         workspace={workspace}
         pending={pending}
+        onEdit={(deliverable) => openEditor({ kind: "edit", deliverable })}
         onSubmit={submitExisting}
       />
 
-      {open && (
+      {editor && (
         <Modal>
           <Modal.Backdrop
             isOpen
             onOpenChange={(isOpen) => {
-              if (!isOpen && !pending) setOpen(false);
+              if (!isOpen && !pending) setEditor(null);
             }}
           >
             <Modal.Container size="lg" placement="center">
-              <Modal.Dialog aria-label="Add deliverable">
+              <Modal.Dialog aria-label={editorTitle}>
                 <Modal.Header>
-                  <Modal.Heading>Add deliverable</Modal.Heading>
+                  <Modal.Heading>{editorTitle}</Modal.Heading>
                   <Modal.CloseTrigger isDisabled={pending !== null}>
                     <X size={18} aria-hidden="true" />
                   </Modal.CloseTrigger>
                 </Modal.Header>
                 <Modal.Body>
                   <DeliverableForm
-                    key={formKey}
                     initialValues={initialValues}
-                    campaigns={available.map((entry) => ({
+                    campaigns={editing ? undefined : available.map((entry) => ({
                       value: String(entry.campaign.campaign_id),
                       label: entry.campaign.name,
                     }))}
-                    onSaveDraft={(input) => save(input, "draft")}
+                    mode={!editing ? "create" : editing.status === "revision_requested" ? "revise" : "edit"}
+                    onSave={(input) => save(input, "save")}
                     onSubmit={(input) => save(input, "submit")}
-                    saveDisabled={pending !== null}
-                    submitDisabled={pending !== null}
                     pending={formPending}
                     error={formError}
                   />
@@ -352,10 +368,12 @@ function CreatorWorkspace({
 function StatusGroups({
   workspace,
   pending,
+  onEdit,
   onSubmit,
 }: {
   workspace: CollaborationWorkspace;
   pending: Pending | null;
+  onEdit: (deliverable: Deliverable) => void;
   onSubmit: (deliverable: Deliverable) => void;
 }) {
   const groups = [
@@ -389,7 +407,7 @@ function StatusGroups({
             </h2>
             {status === "revision_requested" && (
               <p className="text-sm text-[var(--cg-muted)]">
-                Resubmit sends this deliverable again with its current content and attachment.
+                Review the feedback, make any changes, and resubmit when ready.
               </p>
             )}
             {rows.length === 0 ? (
@@ -407,15 +425,28 @@ function StatusGroups({
                       workspace.creatorNames[deliverable.creator_id],
                     )}
                   >
-                    <div className="flex flex-col items-start gap-2 border-t border-[var(--cg-border)] pt-3">
-                      <AppButton
-                        isDisabled={Boolean(reason) || pending !== null}
-                        aria-label={`${status === "revision_requested" ? "Resubmit" : "Submit"} ${deliverable.title}`}
-                        onPress={() => onSubmit(deliverable)}
-                      >
-                        {submitting ? "Submitting..." : status === "revision_requested" ? "Resubmit" : "Submit"}
-                      </AppButton>
-                    </div>
+                    {status !== "draft" && (
+                      <DeliverableFeedback deliverable={deliverable} token={workspace.session.accessToken} />
+                    )}
+                    {!reason && (
+                      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--cg-border)] pt-3">
+                        <AppButton
+                          variant="secondary"
+                          isDisabled={pending !== null}
+                          aria-label={`Edit ${deliverable.title}`}
+                          onPress={() => onEdit(deliverable)}
+                        >
+                          Edit
+                        </AppButton>
+                        <AppButton
+                          isDisabled={pending !== null}
+                          aria-label={`${status === "revision_requested" ? "Resubmit" : "Submit"} ${deliverable.title}`}
+                          onPress={() => onSubmit(deliverable)}
+                        >
+                          {submitting ? "Submitting..." : status === "revision_requested" ? "Resubmit" : "Submit"}
+                        </AppButton>
+                      </div>
+                    )}
                   </DeliverableCard>
                 );
               })

@@ -25,6 +25,7 @@ import {
   type Deliverable,
 } from "../../../api/collaborations";
 import { dashboardPath } from "../../auth/session";
+import { DeliverableFeedback } from "../shared/DeliverableFeedback";
 import { clearSessionIfUnauthorized, useRoleWorkspace } from "../shared/useRoleWorkspace";
 import { linkClass, signedInAs, textLinkClass, titleClass } from "../shared/workspaceSession";
 
@@ -46,7 +47,7 @@ function LoadingBlock({ label }: { label: string }) {
 
 export default function BusinessReviewPage() {
   const returnPath = "/dashboard/business/review";
-  const { view, workspace, reload, updateAccess } = useRoleWorkspace("business");
+  const { view, reload, updateAccess } = useRoleWorkspace("business");
 
   return (
     <div className={pageClass}>
@@ -103,8 +104,8 @@ export default function BusinessReviewPage() {
         </div>
       )}
 
-      {view.kind === "ready" && workspace && (
-        <ScopedBusinessReview workspace={workspace} onAccess={updateAccess} reload={reload} />
+      {view.kind === "ready" && (
+        <ScopedBusinessReview workspace={view.workspace} onAccess={updateAccess} reload={reload} />
       )}
     </div>
   );
@@ -192,7 +193,7 @@ function BusinessWorkspace({
       setComments((current) => ({ ...current, [deliverable.deliverable_id]: "" }));
       showFeedback({
         tone: "success",
-        message: `${action === "approve" ? "Approve" : "Revision request"} finished for "${updated.title}". Status is ${deliverableStatusLabel(updated.status)}.`,
+        message: `${action === "approve" ? "Approved" : "Requested a revision for"} "${updated.title}". Status is ${deliverableStatusLabel(updated.status)}.`,
       });
     } catch (error) {
       if (clearSessionIfUnauthorized(error)) return;
@@ -342,9 +343,13 @@ function ReviewGroup({
             onApprove={() => onReview(deliverable, "approve")}
             onRequestRevision={() => onReview(deliverable, "revision")}
             blockedReason={reviewBlockReason(deliverable.status)}
+            disabled={pending !== null}
             pending={pending?.id === deliverable.deliverable_id ? pending.action : null}
-            error=""
-          />
+          >
+            {status !== "draft" && (
+              <DeliverableFeedback deliverable={deliverable} token={workspace.session.accessToken} />
+            )}
+          </DeliverableReview>
         ))
       )}
     </section>

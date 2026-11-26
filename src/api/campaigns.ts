@@ -244,11 +244,13 @@ export function listCampaigns(options: {
   signal?: AbortSignal;
   token?: string | null;
   status?: CampaignStatus;
+  cache?: RequestCache;
 } = {}) {
   const query = options.status ? `?status=${encodeURIComponent(options.status)}` : "";
   return request<unknown>(`/api/v1/campaigns${query}`, {
     signal: options.signal,
     token: options.token || undefined,
+    cache: options.cache,
   }).then((body) => {
     if (!Array.isArray(body)) {
       throw new CampaignApiError(200, "Campaign list was not in the expected format.");

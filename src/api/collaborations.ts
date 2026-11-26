@@ -1,18 +1,25 @@
 /// <reference types="vite/client" />
 
 import { verifiedBusinessIds, type Session } from "./auth";
+import { CampaignApiError, listCampaigns, type Campaign } from "./campaigns";
 
 // Callers pass a session. Requests send its access token, and a 401 is returned
 // to the caller. A business only loads deliverables for its verified business ids.
 
 export type AttachmentType = "link" | "image";
-export type CampaignStatus = "draft" | "open" | "closed";
-export type OfferType = "gifted" | "dining" | "paid";
 
 export type Attachment = {
   attachment_id?: number;
   attachment_type: AttachmentType;
   url: string;
+};
+
+export type DeliverableFeedback = {
+  feedback_id: number;
+  feedback_type: "approval" | "revision_request";
+  comment?: string | null;
+  created_at?: string | null;
+  resolved_at?: string | null;
 };
 
 export type Deliverable = {
@@ -26,24 +33,13 @@ export type Deliverable = {
   created_at: string | null;
   updated_at: string | null;
   attachments: Attachment[];
+  latest_feedback?: DeliverableFeedback | null;
 };
 
 type DeliverableWrite = {
   title: string;
   description: string | null;
   attachments: { attachment_type: AttachmentType; url: string }[];
-};
-
-export type Campaign = {
-  campaign_id: number;
-  business_id: number;
-  name: string;
-  description: string | null;
-  status: CampaignStatus;
-  offer_type: OfferType | null;
-  starts_on: string | null;
-  ends_on: string | null;
-  county_ids: number[];
 };
 
 export type CampaignAccess = {
@@ -192,49 +188,18 @@ function parseDeliverable(value: unknown): Deliverable {
           return attachment ? [attachment] : [];
         })
       : [],
+    latest_feedback: value.latest_feedback as Deliverable["latest_feedback"],
   };
 }
 
-function parseCampaign(value: unknown): Campaign | null {
-  if (!isRecord(value)) return null;
-  const campaignId = value.campaign_id;
-  const businessId = value.business_id;
-  const name = value.name;
-  const status = value.status;
-  if (typeof campaignId !== "number" || !Number.isInteger(campaignId)) return null;
-  if (typeof businessId !== "number" || !Number.isInteger(businessId)) return null;
-  if (typeof name !== "string" || !name.trim()) return null;
-  if (status !== "draft" && status !== "open" && status !== "closed") return null;
-
-  const offer = value.offer_type;
-  return {
-    campaign_id: campaignId,
-    business_id: businessId,
-    name,
-    description: optionalText(value.description),
-    status,
-    offer_type: offer === "gifted" || offer === "dining" || offer === "paid" ? offer : null,
-    starts_on: optionalText(value.starts_on),
-    ends_on: optionalText(value.ends_on),
-    county_ids: Array.isArray(value.county_ids)
-      ? value.county_ids.filter((id): id is number => typeof id === "number" && Number.isInteger(id))
-      : [],
-  };
-}
-
-async function listCampaigns(token: string, signal?: AbortSignal) {
-  const body = await request("/api/v1/campaigns", { token, signal });
-  if (!Array.isArray(body)) {
-    throw new CollaborationApiError(200, "Campaign list was not in the expected format.");
+async function listWorkspaceCampaigns(token: string, signal?: AbortSignal) {
+  try {
+    return await listCampaigns({ token, signal, cache: "no-store" });
+  } catch (error) {
+    if (error instanceof CampaignApiError) throw new CollaborationApiError(error.status, error.message);
+    if (isAbortError(error)) throw error;
+    throw new CollaborationApiError(0, "Could not reach the CollabGarden API.");
   }
-  const campaigns = body.flatMap((item) => {
-    const campaign = parseCampaign(item);
-    return campaign ? [campaign] : [];
-  });
-  if (body.length > 0 && campaigns.length === 0) {
-    throw new CollaborationApiError(200, "Campaign list was not in the expected format.");
-  }
-  return campaigns;
 }
 
 async function listCreatorNames(signal?: AbortSignal) {
@@ -285,6 +250,17 @@ async function loadCampaign(
   }
 }
 
+export async function loadCampaignDeliverables(
+  campaigns: Campaign[],
+  session: Session,
+  signal?: AbortSignal,
+) {
+  const access = await Promise.all(campaignsForAccount(campaigns, session).map((campaign) =>
+    loadCampaign(campaign, session.accessToken, session.role, signal),
+  ));
+  return access.filter((entry): entry is CampaignAccess => entry !== null);
+}
+
 export async function loadCollaborationWorkspace(
   session: Session,
   signal?: AbortSignal,
@@ -299,21 +275,11 @@ export async function loadCollaborationWorkspace(
   }
 
   const includeCreatorNames = options?.includeCreatorNames !== false;
-  const [campaigns, creatorNames] = await Promise.all([
-    listCampaigns(session.accessToken, signal),
+  const [access, creatorNames] = await Promise.all([
+    listWorkspaceCampaigns(session.accessToken, signal).then((items) => loadCampaignDeliverables(items, session, signal)),
     includeCreatorNames ? listCreatorNames(signal) : Promise.resolve({}),
   ]);
-  const probed = await Promise.all(
-    campaignsForAccount(campaigns, session).map((campaign) =>
-      loadCampaign(campaign, session.accessToken, session.role, signal),
-    ),
-  );
-  const workspace: CollaborationWorkspace = {
-    session,
-    access: probed.filter((entry): entry is CampaignAccess => entry !== null),
-    creatorNames,
-  };
-  return workspace;
+  return { session, access, creatorNames };
 }
 
 export function createDeliverable(
@@ -352,6 +318,26 @@ export function submitDeliverable(deliverableId: number, token: string, signal?:
     token,
     signal,
   }).then(parseDeliverable);
+}
+
+export function updateDeliverable(
+  deliverableId: number,
+  input: Partial<DeliverableWrite>,
+  token: string,
+) {
+  return request(`/api/v1/deliverables/${deliverableId}`, {
+    method: "PATCH",
+    body: input,
+    token,
+  }).then(parseDeliverable);
+}
+
+export async function listDeliverableFeedback(deliverableId: number, token: string) {
+  const body = await request(`/api/v1/deliverables/${deliverableId}/feedback`, { token });
+  if (!Array.isArray(body)) {
+    throw new CollaborationApiError(200, "Feedback history was not in the expected format.");
+  }
+  return body as DeliverableFeedback[];
 }
 
 export function approveDeliverable(
