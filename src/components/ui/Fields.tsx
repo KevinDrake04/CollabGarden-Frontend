@@ -1,4 +1,4 @@
-import { type HTMLInputTypeAttribute, type ReactNode } from "react";
+import { type HTMLInputTypeAttribute, type ReactNode, type Ref } from "react";
 import {
   Description,
   FieldError,
@@ -43,7 +43,13 @@ export function AppInput({
   required,
   className = "",
   type = "text",
-}: FieldProps & { type?: HTMLInputTypeAttribute }) {
+  autoFocus,
+  ref,
+}: FieldProps & {
+  type?: HTMLInputTypeAttribute;
+  autoFocus?: boolean;
+  ref?: Ref<HTMLInputElement>;
+}) {
   return (
     <TextField
       name={name}
@@ -55,6 +61,8 @@ export function AppInput({
     >
       <Label className={labelClass}>{label}</Label>
       <Input
+        ref={ref}
+        autoFocus={autoFocus}
         className="w-full"
         placeholder={placeholder}
         value={value}
@@ -158,6 +166,7 @@ export interface SelectOption {
 
 export type AppSelectProps = FieldProps & {
   options: SelectOption[];
+  popoverRef?: Ref<HTMLDivElement>;
 };
 
 export function AppSelect({
@@ -167,6 +176,7 @@ export function AppSelect({
   defaultValue,
   onChange,
   options,
+  popoverRef,
   placeholder = "Select an option",
   helper,
   error,
@@ -199,7 +209,7 @@ export function AppSelect({
         <Description className={helperClass}>{helper}</Description>
       )}
       {error && <FieldError className={errorClass}>{error}</FieldError>}
-      <Select.Popover>
+      <Select.Popover ref={popoverRef}>
         <ListBox>
           {options.map((option) => (
             <ListBox.Item

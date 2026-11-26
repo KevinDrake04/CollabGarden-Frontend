@@ -6,20 +6,22 @@ import {
   CreatorSocialLinks,
   LegalConsent,
   legalConsentRequiredMessage,
-  type CreatorSocialLink,
 } from "../../components";
 import type { County } from "../../api/directory";
 import type { SignupRole } from "./RoleSelectModal";
 import {
-  collectCreatorLinks,
+  requiredCreatorLinkError,
   type SignupSocialLink,
 } from "../../utils/socialLinks";
 
-export type ProfileCompletionInput = {
-  name?: string;
-  countyId?: number | null;
-  socialLinks?: SignupSocialLink[];
+export type ProfileDraft = {
+  name: string;
+  countyId: string;
+  links: SignupSocialLink[];
+  agreed: boolean;
 };
+
+export type CountyOptions = County[] | "loading" | "error";
 
 export type CompletedProfile = {
   name: string;
@@ -29,16 +31,9 @@ export type CompletedProfile = {
 
 type ProfileCompletionFormProps = {
   role: SignupRole;
-  counties: County[];
-  countyState: "loading" | "ready" | "error";
-  name: string;
-  countyId: string;
-  links: CreatorSocialLink[];
-  agreed: boolean;
-  onNameChange: (name: string) => void;
-  onCountyChange: (countyId: string) => void;
-  onLinksChange: (links: CreatorSocialLink[]) => void;
-  onAgreedChange: (agreed: boolean) => void;
+  counties: CountyOptions;
+  draft: ProfileDraft;
+  onDraftChange: (draft: ProfileDraft) => void;
   submitting?: boolean;
   errorMessage?: string;
   onSubmit: (profile: CompletedProfile) => void;
@@ -48,21 +43,16 @@ type ProfileCompletionFormProps = {
 export function ProfileCompletionForm({
   role,
   counties,
-  countyState,
-  name,
-  countyId,
-  links,
-  agreed,
-  onNameChange,
-  onCountyChange,
-  onLinksChange,
-  onAgreedChange,
+  draft,
+  onDraftChange,
   submitting = false,
   errorMessage = "",
   onSubmit,
   children,
 }: ProfileCompletionFormProps) {
   const isBusiness = role === "business";
+  const { name, countyId, links, agreed } = draft;
+  const availableCounties = Array.isArray(counties) ? counties : [];
   const [nameError, setNameError] = useState("");
   const [socialError, setSocialError] = useState("");
   const [consentError, setConsentError] = useState("");
@@ -76,20 +66,18 @@ export function ProfileCompletionForm({
       : isBusiness
         ? "Enter your business name."
         : "Enter your display name.";
-    const social = isBusiness
-      ? { error: "", links: [] as SignupSocialLink[] }
-      : collectCreatorLinks(links);
+    const nextSocialError = isBusiness ? "" : requiredCreatorLinkError(links);
     const nextConsentError = agreed ? "" : legalConsentRequiredMessage;
     setNameError(nextNameError);
-    setSocialError(social.error);
+    setSocialError(nextSocialError);
     setConsentError(nextConsentError);
-    if (nextNameError || social.error || nextConsentError) return;
+    if (nextNameError || nextSocialError || nextConsentError) return;
 
-    const selectedCounty = counties.find((county) => String(county.county_id) === countyId);
+    const selectedCounty = availableCounties.find((county) => String(county.county_id) === countyId);
     onSubmit({
       name: trimmedName,
       countyId: selectedCounty?.county_id ?? null,
-      socialLinks: social.links,
+      socialLinks: isBusiness ? [] : links,
     });
   }
 
@@ -101,7 +89,7 @@ export function ProfileCompletionForm({
         placeholder={isBusiness ? "Garden Cafe" : "Alex Rivera"}
         value={name}
         onChange={(value) => {
-          onNameChange(value);
+          onDraftChange({ ...draft, name: value });
           setNameError("");
         }}
         error={nameError}
@@ -112,17 +100,17 @@ export function ProfileCompletionForm({
         label="County"
         name="county"
         value={countyId}
-        onChange={onCountyChange}
-        options={counties.map((county) => ({
+        onChange={(value) => onDraftChange({ ...draft, countyId: value })}
+        options={availableCounties.map((county) => ({
           value: String(county.county_id),
           label: county.name,
         }))}
         placeholder="Select a county"
-        disabled={submitting || countyState !== "ready"}
+        disabled={submitting || typeof counties === "string"}
         helper={
-          countyState === "loading"
+          counties === "loading"
             ? "Loading counties..."
-            : countyState === "error"
+            : counties === "error"
               ? "Counties could not be loaded. You can continue without one."
               : "Optional."
         }
@@ -132,10 +120,9 @@ export function ProfileCompletionForm({
           <CreatorSocialLinks
             links={links}
             onChange={(next) => {
-              onLinksChange(next);
-              setSocialError((current) => (current ? collectCreatorLinks(next).error : ""));
+              onDraftChange({ ...draft, links: next });
+              setSocialError((current) => current ? requiredCreatorLinkError(next) : "");
             }}
-            note=""
             disabled={submitting}
           />
           {socialError && (
@@ -153,7 +140,7 @@ export function ProfileCompletionForm({
         disabled={submitting}
         error={consentError}
         onChange={(value) => {
-          onAgreedChange(value);
+          onDraftChange({ ...draft, agreed: value });
           if (value) setConsentError("");
         }}
       />

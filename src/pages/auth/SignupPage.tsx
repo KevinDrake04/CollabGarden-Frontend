@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { FieldError, InputGroup, Label, TextField } from "@heroui/react";
@@ -7,8 +7,8 @@ import {
   AppInput,
   AppNotice,
 } from "../../components";
-import { AuthError, signup } from "../../api/auth";
-import { getCounties, type County } from "../../api/directory";
+import { signup } from "../../api/auth";
+import { loadCounties } from "../../api/directory";
 import {
   parseSignupRole,
   RoleOptions,
@@ -17,9 +17,10 @@ import {
 import {
   ProfileCompletionForm,
   type CompletedProfile,
+  type CountyOptions,
+  type ProfileDraft,
 } from "./ProfileCompletionForm";
-import type { CreatorSocialLink } from "../../components";
-import { dashboardPath, writeSession } from "./session";
+import { dashboardPath, watchSession, writeSession } from "./session";
 
 const manualLoginMessage =
   "Your account was created, but we couldn't sign you in automatically. Log in to continue.";
@@ -28,7 +29,6 @@ const cardClass =
   "rounded-2xl border border-[var(--cg-border)] bg-white p-6 shadow-sm md:p-8";
 
 function AuthFrame({ children }: { children: ReactNode }) {
-  // Cancel the default page padding so this screen can use the landing page background.
   return (
     <div className="-mx-12 -mt-12 flex-1 bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-mt-8">
       <div className="mx-auto grid w-full max-w-6xl items-center gap-8 px-4 py-10 md:grid-cols-2 md:gap-12 md:px-8 md:py-14">
@@ -107,39 +107,35 @@ function SignupForm({ role }: { role: SignupRole }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [counties, setCounties] = useState<County[]>([]);
-  const [countyState, setCountyState] = useState<"loading" | "ready" | "error">("loading");
+  const [counties, setCounties] = useState<CountyOptions>("loading");
   const [step, setStep] = useState<1 | 2>(1);
-  const [name, setName] = useState("");
-  const [countyId, setCountyId] = useState("");
-  const [links, setLinks] = useState<CreatorSocialLink[]>([]);
-  const [agreed, setAgreed] = useState(false);
+  const [draft, setDraft] = useState<ProfileDraft>({
+    name: "",
+    countyId: "",
+    links: [],
+    agreed: false,
+  });
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [submitError, setSubmitError] = useState("");
-  const [notice, setNotice] = useState<{
-    tone: "success" | "error" | "info";
-    message: string;
-  } | null>(null);
+  const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const lock = useRef(false);
+  const mounted = useRef(false);
   const isBusiness = role === "business";
   const locked = submitting || completed;
 
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
   useEffect(() => {
-    const controller = new AbortController();
-    getCounties(controller.signal)
-      .then((list) => {
-        if (controller.signal.aborted) return;
-        setCounties(list);
-        setCountyState("ready");
-      })
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        setCountyState("error");
-      });
-    return () => controller.abort();
+    loadCounties().then(
+      (list) => { if (mounted.current) setCounties(list); },
+      () => { if (mounted.current) setCounties("error"); },
+    );
   }, []);
 
   function onContinue(event: FormEvent<HTMLFormElement>) {
@@ -152,12 +148,9 @@ function SignupForm({ role }: { role: SignupRole }) {
       : "Use at least 6 characters for your password.";
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
-    if (nextEmailError || nextPasswordError) {
-      setNotice(null);
-      return;
-    }
+    setNotice("");
+    if (nextEmailError || nextPasswordError) return;
     setSubmitError("");
-    setNotice(null);
     setStep(2);
   }
 
@@ -166,53 +159,45 @@ function SignupForm({ role }: { role: SignupRole }) {
     lock.current = true;
     setSubmitting(true);
     setSubmitError("");
-    setNotice(null);
+    const { pathname, search } = window.location;
+    const stillOnSignup = () => mounted.current
+      && window.location.pathname === pathname
+      && window.location.search === search;
+    let sessionChanged = false;
+    const stopWatching = watchSession(() => { sessionChanged = true; });
+    let result;
     try {
-      const result = await signup(
-        isBusiness
-          ? {
-              email: email.trim(),
-              password,
-              role: "business",
-              name: profile.name,
-              countyId: profile.countyId,
-            }
-          : {
-              email: email.trim(),
-              password,
-              role: "creator",
-              name: profile.name,
-              countyId: profile.countyId,
-              socialLinks: profile.socialLinks,
-            },
-      );
-      setPassword("");
-      if (result.status === "signed-in") {
-        try {
-          writeSession(result.session);
-        } catch {
-          setCompleted(true);
-          setStep(1);
-          setNotice({ tone: "info", message: manualLoginMessage });
-          return;
-        }
-        setCompleted(true);
-        navigate(dashboardPath(result.session.role), { replace: true });
-        return;
-      }
-      setCompleted(true);
-      setStep(1);
-      setNotice({ tone: "info", message: manualLoginMessage });
+      result = await signup({ email: email.trim(), password, ...profile, role });
     } catch (error) {
-      lock.current = false;
-      const fallback = "Sign up failed. Please try again.";
-      const message = error instanceof AuthError || error instanceof Error
-        ? error.message || fallback
-        : fallback;
-      setSubmitError(message);
+      if (stillOnSignup()) {
+        lock.current = false;
+        setSubmitting(false);
+        setSubmitError((error instanceof Error && error.message) || "Sign up failed. Please try again.");
+      }
+      return;
     } finally {
-      setSubmitting(false);
+      stopWatching();
     }
+
+    if (!stillOnSignup()) return;
+    setPassword("");
+    setSubmitting(false);
+    setCompleted(true);
+
+    let session = !sessionChanged && result.status === "signed-in" ? result.session : null;
+    if (session) {
+      try {
+        writeSession(session);
+      } catch {
+        session = null;
+      }
+    }
+    if (session) {
+      navigate(dashboardPath(session.role), { replace: true });
+      return;
+    }
+    setStep(1);
+    setNotice(manualLoginMessage);
   }
 
   const heading = isBusiness ? "Join as a business" : "Join as a creator";
@@ -231,15 +216,8 @@ function SignupForm({ role }: { role: SignupRole }) {
         <ProfileCompletionForm
           role={role}
           counties={counties}
-          countyState={countyState}
-          name={name}
-          countyId={countyId}
-          links={links}
-          agreed={agreed}
-          onNameChange={setName}
-          onCountyChange={setCountyId}
-          onLinksChange={setLinks}
-          onAgreedChange={setAgreed}
+          draft={draft}
+          onDraftChange={setDraft}
           submitting={submitting}
           errorMessage={submitError}
           onSubmit={onProfileComplete}
@@ -356,9 +334,9 @@ function SignupForm({ role }: { role: SignupRole }) {
       {notice && (
         <div className="mt-4">
           <AppNotice
-            tone={notice.tone}
-            message={notice.message}
-            onClose={notice.tone === "success" ? undefined : () => setNotice(null)}
+            tone="info"
+            message={notice}
+            onClose={() => setNotice("")}
           />
         </div>
       )}
@@ -380,7 +358,7 @@ function SignupForm({ role }: { role: SignupRole }) {
         isDisabled={locked}
         onPress={() => {
           if (locked) return;
-          setNotice({ tone: "info", message: "Continue with Google is coming soon." });
+          setNotice("Continue with Google is coming soon.");
         }}
       >
         <img

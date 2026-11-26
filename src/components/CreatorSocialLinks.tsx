@@ -1,63 +1,30 @@
-import { type KeyboardEvent, useEffect, useState } from "react";
+import { type KeyboardEvent, useCallback, useId, useRef, useState } from "react";
 import { Modal } from "@heroui/react";
 import { Globe, X } from "lucide-react";
 import {
-  acceptSocialLink,
   isSocialPlatform,
+  readSignupLink,
   socialLinkSummary,
   socialPlatforms,
+  type SignupSocialLink,
   type SocialPlatformId,
 } from "../utils/socialLinks";
 import { AppButton } from "./ui/Buttons";
 import { AppInput, AppSelect } from "./ui/Fields";
 
-// Controlled profile links. Parents own the list so signup, Google onboarding,
-// and profile editing can share this component without storing anything here.
-export type SocialPlatform = SocialPlatformId;
-
-export type CreatorSocialLink = {
-  platform: SocialPlatform;
-  url: string;
-};
-
-export type CreatorSocialLinksProps = {
-  links: CreatorSocialLink[];
-  onChange: (links: CreatorSocialLink[]) => void;
+type CreatorSocialLinksProps = {
+  links: SignupSocialLink[];
+  onChange: (links: SignupSocialLink[]) => void;
   disabled?: boolean;
-  // Pass an empty string to hide the helper line.
-  note?: string;
 };
 
 type SocialPlatformDefinition = (typeof socialPlatforms)[number];
-type SocialDrafts = Record<SocialPlatformId, string>;
+type SocialDrafts = Partial<Record<SocialPlatformId, { value: string; error?: string }>>;
 
 const primaryPlatforms = socialPlatforms.filter((platform) => platform.group === "primary");
 const additionalPlatforms = socialPlatforms.filter((platform) => platform.group === "additional");
 const focusClass =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cg-primary-dark)]";
-
-function savedUrl(links: readonly CreatorSocialLink[], platform: SocialPlatformId) {
-  return links.find((link) => link.platform === platform && link.url.trim())?.url ?? "";
-}
-
-function emptyDrafts(): SocialDrafts {
-  return {
-    instagram: "",
-    tiktok: "",
-    youtube: "",
-    facebook: "",
-    x: "",
-    website: "",
-  };
-}
-
-function draftsFromLinks(links: readonly CreatorSocialLink[]): SocialDrafts {
-  const drafts = emptyDrafts();
-  for (const link of links) {
-    if (link.url.trim()) drafts[link.platform] = link.url;
-  }
-  return drafts;
-}
 
 function choiceClass(added: boolean, disabled: boolean) {
   if (disabled) return "cursor-not-allowed border-[var(--cg-border)] bg-white";
@@ -136,66 +103,63 @@ export function CreatorSocialLinks({
   links,
   onChange,
   disabled = false,
-  note,
 }: CreatorSocialLinksProps) {
   const [open, setOpen] = useState(false);
-  const [drafts, setDrafts] = useState<SocialDrafts>(emptyDrafts);
-  const [errors, setErrors] = useState<Partial<Record<SocialPlatformId, string>>>({});
-  const [visibleIds, setVisibleIds] = useState<SocialPlatformId[]>([]);
-  const [focusId, setFocusId] = useState<SocialPlatformId>("instagram");
+  const [drafts, setDrafts] = useState<SocialDrafts>({});
+  const [focusOnMount, setFocusOnMount] = useState<SocialPlatformId>();
+  const inputs = useRef<Partial<Record<SocialPlatformId, HTMLInputElement | null>>>({});
+  const focusAfterPicker = useRef<SocialPlatformId | undefined>(undefined);
+  const requirementId = useId();
 
-  const savedExtras = additionalPlatforms.filter((platform) => savedUrl(links, platform.id));
-  const visiblePlatforms = socialPlatforms.filter((platform) => visibleIds.includes(platform.id));
-  const availablePlatforms = socialPlatforms.filter((platform) => !visibleIds.includes(platform.id));
+  const saved = new Map(links.map(({ platform, url }) => [platform, url]));
+  const savedExtras = additionalPlatforms.filter((platform) => saved.has(platform.id));
+  const availablePlatforms = socialPlatforms.filter((platform) => !drafts[platform.id]);
 
-  useEffect(() => {
-    if (!open) return;
-    const timer = window.setTimeout(() => {
-      const node = document.getElementById(`social-field-${focusId}`);
-      node?.scrollIntoView({ block: "start" });
-      node?.querySelector("input")?.focus({ preventScroll: true });
-    }, 50);
-    return () => window.clearTimeout(timer);
-  }, [open, focusId, visibleIds]);
+  const pickerPopoverRef = useCallback((popover: HTMLDivElement | null) => {
+    if (popover || !focusAfterPicker.current) return;
+    // The picker owns focus until its popover has unmounted.
+    requestAnimationFrame(() => {
+      const platform = focusAfterPicker.current;
+      focusAfterPicker.current = undefined;
+      if (platform) inputs.current[platform]?.focus();
+    });
+  }, []);
 
   function openModal(platform: SocialPlatformId) {
-    if (disabled) return;
-    const saved = socialPlatforms
-      .filter((item) => savedUrl(links, item.id))
-      .map((item) => item.id);
-    setDrafts(draftsFromLinks(links));
-    setErrors({});
-    setVisibleIds(saved.includes(platform) ? saved : [...saved, platform]);
-    setFocusId(platform);
+    const nextDrafts: SocialDrafts = {};
+    for (const [id, value] of saved) nextDrafts[id] = { value };
+    nextDrafts[platform] ??= { value: "" };
+    setDrafts(nextDrafts);
+    setFocusOnMount(platform);
     setOpen(true);
   }
 
   function close() {
+    focusAfterPicker.current = undefined;
     setOpen(false);
-  }
-
-  function updateDraft(platform: SocialPlatformId, value: string) {
-    setDrafts((current) => ({ ...current, [platform]: value }));
-    setErrors((current) => ({ ...current, [platform]: "" }));
   }
 
   function save() {
     if (disabled) return;
-    const nextErrors: Partial<Record<SocialPlatformId, string>> = {};
-    const nextLinks: CreatorSocialLink[] = [];
+    const nextDrafts = { ...drafts };
+    const nextLinks: SignupSocialLink[] = [];
+    let firstInvalid: SocialPlatformId | undefined;
 
-    for (const platform of socialPlatforms) {
-      const raw = drafts[platform.id].trim();
-      if (!visibleIds.includes(platform.id) || !raw) continue;
-      const accepted = acceptSocialLink(platform.id, raw);
-      if ("error" in accepted) nextErrors[platform.id] = accepted.error;
-      else nextLinks.push({ platform: platform.id, url: accepted.url });
+    for (const { id } of socialPlatforms) {
+      const draft = drafts[id];
+      if (!draft) continue;
+      const result = readSignupLink(id, draft.value);
+      if (result.status === "error") {
+        nextDrafts[id] = { ...draft, error: result.error };
+        firstInvalid ??= id;
+      } else if (result.status === "ok") {
+        nextLinks.push({ platform: id, url: result.url });
+      }
     }
 
-    const firstError = socialPlatforms.find((platform) => nextErrors[platform.id]);
-    if (firstError) {
-      setErrors(nextErrors);
-      setFocusId(firstError.id);
+    if (firstInvalid) {
+      setDrafts(nextDrafts);
+      inputs.current[firstInvalid]?.focus();
       return;
     }
 
@@ -204,21 +168,25 @@ export function CreatorSocialLinks({
   }
 
   function onEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
+    if (event.key !== "Enter" || event.nativeEvent.isComposing || !(event.target instanceof HTMLInputElement)) return;
     event.preventDefault();
     save();
   }
 
   function removeField(platform: SocialPlatformId) {
-    if (disabled) return;
-    setVisibleIds((current) => current.filter((id) => id !== platform));
-    setDrafts((current) => ({ ...current, [platform]: "" }));
-    setErrors((current) => ({ ...current, [platform]: "" }));
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[platform];
+      return next;
+    });
   }
 
   function renderField(platform: SocialPlatformDefinition) {
+    const draft = drafts[platform.id];
+    if (!draft) return null;
+
     return (
-      <div id={`social-field-${platform.id}`} key={platform.id} className="relative scroll-mt-2">
+      <div key={platform.id} className="relative">
         <button
           type="button"
           className="absolute top-0 right-0 z-10 flex h-5 items-center cursor-pointer text-xs font-medium text-[var(--cg-error)] disabled:cursor-not-allowed"
@@ -235,12 +203,14 @@ export function CreatorSocialLinks({
             </span>
           }
           name={platform.id}
-          value={drafts[platform.id]}
-          onChange={(value) => updateDraft(platform.id, value)}
+          value={draft.value}
+          onChange={(value) => setDrafts((current) => ({ ...current, [platform.id]: { value } }))}
           placeholder={platform.placeholder}
           helper={`Example: ${platform.example}`}
-          error={errors[platform.id] ?? ""}
+          error={draft.error}
           disabled={disabled}
+          autoFocus={focusOnMount === platform.id}
+          ref={(input) => { inputs.current[platform.id] = input; }}
         />
       </div>
     );
@@ -252,14 +222,6 @@ export function CreatorSocialLinks({
         <h2 className="m-0 text-sm font-medium text-[var(--cg-text)]">
           Social media profiles
         </h2>
-        {note !== "" && (
-          <p className="mt-1 text-xs text-[var(--cg-muted)]">
-            {note
-              ?? (disabled
-                ? "Social profiles are not available yet."
-                : "Optional. A saved link is not a login and does not verify the account.")}
-          </p>
-        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -267,20 +229,20 @@ export function CreatorSocialLinks({
           className="grid grid-cols-2 gap-2"
           role="group"
           aria-label="Social media profiles"
-          aria-describedby="social-primary-requirement"
+          aria-describedby={requirementId}
           aria-disabled={disabled}
         >
           {primaryPlatforms.map((platform) => (
             <ProfileChoice
               key={platform.id}
               platform={platform}
-              url={savedUrl(links, platform.id)}
+              url={saved.get(platform.id) ?? ""}
               disabled={disabled}
               onPress={() => openModal(platform.id)}
             />
           ))}
         </div>
-        <p id="social-primary-requirement" className="m-0 text-xs text-[var(--cg-muted)]">
+        <p id={requirementId} className="m-0 text-xs text-[var(--cg-muted)]">
           At least one of Instagram, TikTok, YouTube, or Facebook is required.
         </p>
       </div>
@@ -291,7 +253,7 @@ export function CreatorSocialLinks({
             <li key={platform.id}>
               <ProfileChoice
                 platform={platform}
-                url={savedUrl(links, platform.id)}
+                url={saved.get(platform.id) ?? ""}
                 disabled={disabled}
                 onPress={() => openModal(platform.id)}
               />
@@ -322,19 +284,16 @@ export function CreatorSocialLinks({
               </Modal.Header>
               <Modal.Body className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 <div className="flex flex-col gap-4" onKeyDown={onEditorKeyDown}>
-                  {visiblePlatforms.map(renderField)}
+                  {socialPlatforms.map(renderField)}
                   {availablePlatforms.length > 0 && (
                     <AppSelect
-                      key={availablePlatforms.map((platform) => platform.id).join(",")}
                       label="Add another platform"
                       name="additionalProfile"
                       value=""
                       onChange={(value) => {
-                        if (!isSocialPlatform(value) || visibleIds.includes(value)) return;
-                        setVisibleIds((current) =>
-                          current.includes(value) ? current : [...current, value],
-                        );
-                        setFocusId(value);
+                        if (!isSocialPlatform(value) || drafts[value]) return;
+                        focusAfterPicker.current = value;
+                        setDrafts((current) => ({ ...current, [value]: { value: "" } }));
                       }}
                       options={availablePlatforms.map((platform) => ({
                         value: platform.id,
@@ -342,6 +301,7 @@ export function CreatorSocialLinks({
                       }))}
                       placeholder="Select a platform"
                       disabled={disabled}
+                      popoverRef={pickerPopoverRef}
                     />
                   )}
                 </div>

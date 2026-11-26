@@ -1,20 +1,13 @@
 import { Link } from "react-router";
 
-// Controlled terms and privacy consent. Parents own the checked value so
-// signup can keep it between steps, and a future Google onboarding screen
-// can reuse this without the component storing or submitting anything.
-//
-// legalAgreementVersion matches the Terms of Use and Privacy Policy dated
-// 2026-11-23. The development SignupRequest has no agreement field, so this
-// version must not be sent until that contract exists.
-
+// Retained for the upcoming backend agreement field.
 export const legalAgreementVersion = "2026-11-23";
 
 export const legalConsentRequiredMessage = "Please agree to continue";
 
 const linkClass = "cg-focus font-semibold text-[var(--cg-primary-dark)] underline";
 
-export type LegalConsentProps = {
+type LegalConsentProps = {
   checked: boolean;
   onChange: (checked: boolean) => void;
   error?: string;

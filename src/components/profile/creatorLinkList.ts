@@ -1,6 +1,3 @@
-// Public profile links. Unknown, empty, and non-http(s) values are left out
-// so older creators with no social_links still render the same profile.
-
 import { socialPlatforms, type SocialPlatformId } from "../../utils/socialLinks";
 
 export type CreatorLinkInput = {
@@ -8,26 +5,17 @@ export type CreatorLinkInput = {
   url?: string | null;
 };
 
-export const creatorLinkPlatforms = socialPlatforms.map((platform) => ({
-  id: platform.id,
-  label: platform.publicLabel,
-  icon: platform.icon,
-}));
-
-export type CreatorLinkPlatformId = SocialPlatformId;
-
-export type VisibleCreatorLink = {
-  id: CreatorLinkPlatformId;
+type VisibleCreatorLink = {
+  id: SocialPlatformId;
   label: string;
   icon: string;
   href: string;
 };
 
-function safeHttpUrl(value: string | null | undefined) {
-  const trimmed = value?.trim() ?? "";
-  if (!trimmed) return null;
+function safeHttpUrl(value: unknown) {
+  if (typeof value !== "string") return null;
   try {
-    const url = new URL(trimmed);
+    const url = new URL(value.trim());
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     if (url.username || url.password) return null;
     return url.href;
@@ -40,20 +28,19 @@ export function visibleCreatorLinks(links: CreatorLinkInput[] | null | undefined
   if (!Array.isArray(links)) return [];
 
   const visible: VisibleCreatorLink[] = [];
-  for (const platform of creatorLinkPlatforms) {
-    let href: string | null = null;
+  for (const platform of socialPlatforms) {
     for (const link of links) {
-      if (link?.platform?.trim().toLowerCase() !== platform.id) continue;
-      href = safeHttpUrl(link.url);
-      if (href) break;
+      if (typeof link?.platform !== "string" || link.platform.trim().toLowerCase() !== platform.id) continue;
+      const href = safeHttpUrl(link.url);
+      if (!href) continue;
+      visible.push({
+        id: platform.id,
+        label: platform.publicLabel ?? platform.label,
+        icon: platform.icon,
+        href,
+      });
+      break;
     }
-    if (!href) continue;
-    visible.push({
-      id: platform.id,
-      label: platform.label,
-      icon: platform.icon,
-      href,
-    });
   }
   return visible;
 }

@@ -1,25 +1,6 @@
 /// <reference types="vite/client" />
 
-// Login: POST /auth/login returns access_token and user { id, email, role }.
-// Signup: POST /auth/signup takes email, password, role, and business_name or display_name.
-// county_id is optional for both roles. Creators can also send social_links
-// for instagram, tiktok, youtube, facebook, x, and website.
-// Business requests do not include social_links.
-// The development SignupRequest has no consent or agreement field. The
-// registration checkbox is enforced in the form and is not sent or stored.
-// A successful signup body may be empty, or it may include access_token and refresh_token.
-// Tokens are read from that JSON body only. They are never written to a URL.
-// Both login and signup open a session the same way: GET /auth/me must confirm the
-// account before a Session is returned. The role on that Session comes from /auth/me.
-// The OpenAPI document leaves the login and signup response schemas untyped.
-// GET /auth/me is also untyped in OpenAPI and now returns the signed-in account:
-// id, email, role, business_id, and business_ids.
-// Creators receive null business identifiers. role is "business", "creator", or "admin".
-// The browser copy of this session lives in src/pages/auth/session.ts.
-
-import { isSocialPlatform, type SignupSocialLink } from "../utils/socialLinks";
-
-export type { SignupSocialLink };
+import type { SignupSocialLink } from "../utils/socialLinks";
 
 export type AccountRole = "business" | "creator" | "admin";
 
@@ -35,7 +16,7 @@ export type Session = {
 
 // signed-in: signup returned a token and /auth/me confirmed the account.
 // created: the account exists, but no session could be opened from the response.
-export type SignupResult =
+type SignupResult =
   | { status: "signed-in"; session: Session }
   | { status: "created" };
 
@@ -53,6 +34,14 @@ function apiUrl() {
   const url = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
   if (!url) throw new AuthError(0, "Missing VITE_API_URL in .env.local");
   return url;
+}
+
+function postAuth(endpoint: "login" | "signup", body: object) {
+  return fetch(`${apiUrl()}/auth/${endpoint}`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 function errorMessage(status: number, body: unknown) {
@@ -188,11 +177,9 @@ function authPayload(body: unknown) {
   const user = record && isRecord(record.user) ? record.user : null;
   const userId = user && typeof user.id === "string" ? user.id : "";
   const email = user && typeof user.email === "string" ? user.email : "";
-  return { accessToken, refreshToken, user, userId, email };
+  return { accessToken, refreshToken, userId, email };
 }
 
-// Confirm the access token with /auth/me, then build the same Session login stores.
-// A refresh token is kept only after that confirmation. It is not required.
 async function sessionFromTokens(input: {
   accessToken: string;
   refreshToken: string;
@@ -217,16 +204,12 @@ async function sessionFromTokens(input: {
 }
 
 export async function login(email: string, password: string): Promise<Session> {
-  const response = await fetch(`${apiUrl()}/auth/login`, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
+  const response = await postAuth("login", { email, password });
   const body = await readBody(response);
   if (!response.ok) throw new AuthError(response.status, errorMessage(response.status, body));
 
   const parsed = authPayload(body);
-  if (!parsed.accessToken || !parsed.user || !parsed.userId) {
+  if (!parsed.accessToken || !parsed.userId) {
     throw new AuthError(response.status, "The login response did not include an access token and account.");
   }
 
@@ -238,7 +221,7 @@ export async function login(email: string, password: string): Promise<Session> {
   });
 }
 
-export type SignupInput = {
+type SignupInput = {
   email: string;
   password: string;
   name: string;
@@ -248,7 +231,7 @@ export type SignupInput = {
   | { role: "creator"; socialLinks: SignupSocialLink[] }
 );
 
-export type SignupBody = {
+type SignupBody = {
   email: string;
   password: string;
   role: "business" | "creator";
@@ -258,7 +241,6 @@ export type SignupBody = {
   social_links?: SignupSocialLink[];
 };
 
-// One link per platform. Business registrations never include social_links.
 export function signupRequestBody(input: SignupInput): SignupBody {
   const body: SignupBody = {
     email: input.email,
@@ -270,15 +252,7 @@ export function signupRequestBody(input: SignupInput): SignupBody {
     body.business_name = input.name;
   } else {
     body.display_name = input.name;
-    const seen = new Set<string>();
-    const links: SignupSocialLink[] = [];
-    for (const link of input.socialLinks) {
-      const url = link.url.trim();
-      if (!url || seen.has(link.platform) || !isSocialPlatform(link.platform)) continue;
-      seen.add(link.platform);
-      links.push({ platform: link.platform, url });
-    }
-    body.social_links = links;
+    body.social_links = input.socialLinks;
   }
 
   if (typeof input.countyId === "number" && Number.isInteger(input.countyId) && input.countyId > 0) {
@@ -289,12 +263,9 @@ export function signupRequestBody(input: SignupInput): SignupBody {
 }
 
 export async function signup(input: SignupInput): Promise<SignupResult> {
-  const response = await fetch(`${apiUrl()}/auth/signup`, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(signupRequestBody(input)),
-  });
+  const response = await postAuth("signup", signupRequestBody(input));
 
+  // A successful response can mean the account exists even if we cannot open a session.
   let body: unknown;
   try {
     body = await readBody(response);

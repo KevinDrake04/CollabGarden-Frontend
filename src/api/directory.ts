@@ -32,7 +32,7 @@ type SamplePost = {
   caption?: string | null;
 };
 
-export type SocialLink = {
+type SocialLink = {
   platform: string;
   url: string;
 };
@@ -203,7 +203,7 @@ export function loadCounties(force = false) {
   if (countyRequest) return countyRequest;
 
   const controller = new AbortController();
-  const request = get<County[]>("/api/v1/counties?state=NJ", controller.signal)
+  const request = getCounties(controller.signal)
     .then((counties) => {
       savedCounties = { value: counties, savedAt: Date.now() };
       return counties;
