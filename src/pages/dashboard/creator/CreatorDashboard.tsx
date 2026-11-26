@@ -18,6 +18,7 @@ import {
 import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../../api/campaigns";
 import { getCounties, type County } from "../../../api/directory";
 import { expireSession } from "../../auth/session";
+import { CreatorApplicationFeedback, CreatorApplicationHistory, useCreatorApplications } from "../../campaigns/CreatorApplications";
 import { DeliverableOverview } from "../shared/DeliverableOverview";
 import { OpportunityList } from "./CreatorOpportunitiesPage";
 import { useCreatorGreeting } from "./useCreatorGreeting";
@@ -46,6 +47,7 @@ function isAbort(error: unknown) {
 export default function CreatorDashboard() {
   const { session, accountState, accountError, retry } = useWorkspaceSession();
   const ready = accountState === "ready" && session?.role === "creator";
+  const applications = useCreatorApplications(ready ? session.accessToken : null);
   const greeting = useCreatorGreeting(ready ? session : null);
   const [opportunities, setOpportunities] = useState<OpportunityLoad>({ status: "idle" });
   const [opportunityAttempt, setOpportunityAttempt] = useState(0);
@@ -74,7 +76,7 @@ export default function CreatorDashboard() {
         if (controller.signal.aborted) return;
         setOpportunities({
           status: "ready",
-          campaigns: campaigns.filter((campaign) => campaign.status === "open"),
+          campaigns,
           businesses,
           counties,
         });
@@ -126,6 +128,7 @@ export default function CreatorDashboard() {
 
   const displayName = greeting.displayName || session.email;
   const openCount = opportunities.status === "ready" ? opportunities.campaigns.length : null;
+  const featuredCampaigns = opportunities.status === "ready" ? opportunities.campaigns.slice(0, 3) : [];
   const deliverableCounts = deliverables.status === "ready" ? deliverableStatusCounts(deliverables.access) : null;
   let deliverableStatus: "loading" | "error" | "ready" = "loading";
   if (deliverables.status === "error") deliverableStatus = "error";
@@ -170,8 +173,9 @@ export default function CreatorDashboard() {
               </Link>
             </div>
             <p className="text-sm text-[var(--cg-muted)]">
-              Open campaigns from local businesses. These are not assigned to you.
+              Apply to open campaigns from local businesses.
             </p>
+            <CreatorApplicationFeedback applications={applications} />
             {opportunities.status === "loading" && (
               <div className="grid gap-4" aria-busy="true" aria-label="Loading open campaigns">
                 <LoadingSkeleton lines={3} />
@@ -190,9 +194,18 @@ export default function CreatorDashboard() {
             )}
             {opportunities.status === "ready" && opportunities.campaigns.length > 0 && (
               <OpportunityList
-                campaigns={opportunities.campaigns.slice(0, 3)}
+                campaigns={featuredCampaigns}
                 businesses={opportunities.businesses}
                 counties={opportunities.counties}
+                token={session.accessToken}
+                applications={applications}
+              />
+            )}
+            {applications.load.status === "ready" && (
+              <CreatorApplicationHistory
+                items={applications.load.items}
+                visibleCampaignIds={featuredCampaigns.map((item) => item.campaign_id)}
+                limit={3}
               />
             )}
           </section>

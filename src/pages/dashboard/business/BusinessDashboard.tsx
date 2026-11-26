@@ -20,6 +20,7 @@ import {
 import { listCampaigns, type Campaign } from "../../../api/campaigns";
 import { getBusiness, getCounties, type Business, type County } from "../../../api/directory";
 import { expireSession } from "../../auth/session";
+import { CampaignApplications } from "./CampaignApplications";
 import { DeliverableOverview } from "../shared/DeliverableOverview";
 import { campaignNote, countyLabel, dateLabel, statusLabel } from "../shared/campaignLabels";
 import { businessSearch, BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "../shared/selectedBusiness";
@@ -48,9 +49,11 @@ function isAbort(error: unknown) {
 export function CampaignStack({
   campaigns,
   counties,
+  token,
 }: {
   campaigns: Campaign[];
   counties: County[];
+  token: string;
 }) {
   const navigate = useNavigate();
   return (
@@ -69,7 +72,9 @@ export function CampaignStack({
             note={note || undefined}
             actionLabel={draft ? "Edit draft" : undefined}
             onAction={draft ? () => navigate(`/campaigns/${campaign.campaign_id}/edit`) : undefined}
-          />
+          >
+            {!draft && <CampaignApplications key={token} campaignId={campaign.campaign_id} token={token} />}
+          </CampaignCard>
         );
       })}
     </div>
@@ -113,7 +118,7 @@ export default function BusinessDashboard() {
         setCampaignLoad({
           status: "ready",
           campaigns: campaigns
-            .filter((campaign) => campaign.business_id === businessId && allowed.includes(campaign.business_id))
+            .filter((campaign) => campaign.business_id === businessId)
             .sort((left, right) => left.campaign_id - right.campaign_id),
           counties,
           profile: profile && profile.business_id === businessId ? profile : null,
@@ -166,7 +171,9 @@ export default function BusinessDashboard() {
 
   const profile = campaignLoad.status === "ready" ? campaignLoad.profile : null;
   const knownName = profile?.name?.trim() || (selected != null ? names.get(selected) : undefined);
-  const campaigns = campaignLoad.status === "ready" ? campaignLoad.campaigns : [];
+  const campaigns = campaignLoad.status === "ready"
+    ? campaignLoad.campaigns.filter((campaign) => campaign.business_id === selected)
+    : [];
   const openCount = campaignLoad.status === "ready"
     ? campaigns.filter((campaign) => campaign.status === "open").length
     : null;
@@ -250,7 +257,7 @@ export default function BusinessDashboard() {
               <DashboardEmptyState message="No campaigns were returned for this business." />
             )}
             {campaignLoad.status === "ready" && campaigns.length > 0 && (
-              <CampaignStack campaigns={campaigns.slice(0, 3)} counties={campaignLoad.counties} />
+              <CampaignStack campaigns={campaigns.slice(0, 3)} counties={campaignLoad.counties} token={session.accessToken} />
             )}
           </section>
 

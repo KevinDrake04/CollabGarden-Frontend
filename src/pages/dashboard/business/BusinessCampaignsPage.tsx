@@ -54,7 +54,7 @@ export default function BusinessCampaignsPage() {
         setCampaignLoad({
           status: "ready",
           campaigns: campaigns
-            .filter((campaign) => campaign.business_id === businessId && allowed.includes(campaign.business_id))
+            .filter((campaign) => campaign.business_id === businessId)
             .sort((left, right) => left.campaign_id - right.campaign_id),
           counties,
         });
@@ -80,6 +80,10 @@ export default function BusinessCampaignsPage() {
       />
     );
   }
+
+  const campaigns = campaignLoad.status === "ready"
+    ? campaignLoad.campaigns.filter((campaign) => campaign.business_id === selected)
+    : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -116,11 +120,11 @@ export default function BusinessCampaignsPage() {
           </AppButton>
         </div>
       )}
-      {ready && campaignLoad.status === "ready" && campaignLoad.campaigns.length === 0 && (
+      {ready && campaignLoad.status === "ready" && campaigns.length === 0 && (
         <DashboardEmptyState message="No campaigns were returned for this business." />
       )}
-      {ready && campaignLoad.status === "ready" && campaignLoad.campaigns.length > 0 && (
-        <CampaignStack campaigns={campaignLoad.campaigns} counties={campaignLoad.counties} />
+      {ready && campaignLoad.status === "ready" && campaigns.length > 0 && (
+        <CampaignStack campaigns={campaigns} counties={campaignLoad.counties} token={session.accessToken} />
       )}
     </div>
   );

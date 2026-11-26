@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Chip } from "@heroui/react";
 import { Calendar, MapPin } from "lucide-react";
@@ -13,6 +13,8 @@ import {
   type DeliverableType,
   type OfferType,
 } from "../../api/campaigns";
+import { useLiveSession } from "../auth/session";
+import { CreatorApplicationAction, CreatorApplicationFeedback, useCreatorApplications } from "./CreatorApplications";
 
 const offerLabels: Record<OfferType, string> = {
   gifted: "Gifted",
@@ -68,10 +70,12 @@ function CampaignCard({
   campaign,
   business,
   counties,
+  children,
 }: {
   campaign: Campaign;
   business?: BusinessSummary;
   counties: County[];
+  children?: ReactNode;
 }) {
   const businessName = business?.name || `Business ${campaign.business_id}`;
   const requirements = requirementsLabel(campaign.deliverable_requirements);
@@ -114,11 +118,15 @@ function CampaignCard({
           {dateLabel(campaign)}
         </span>
       </div>
+      {children}
     </article>
   );
 }
 
 export default function CampaignListPage() {
+  const session = useLiveSession();
+  const token = session?.role === "creator" ? session.accessToken : null;
+  const applications = useCreatorApplications(token);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [businesses, setBusinesses] = useState<BusinessSummary[]>([]);
   const [counties, setCounties] = useState<County[]>([]);
@@ -159,12 +167,19 @@ export default function CampaignListPage() {
             </p>
           </div>
           <Link
-            to="/campaigns/new"
+            to={session?.role === "creator" ? "/dashboard/creator/opportunities" : "/campaigns/new"}
             className="inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 py-2 text-sm font-semibold text-white no-underline sm:w-auto"
           >
-            Post a campaign
+            {session?.role === "creator" ? "My opportunities" : "Post a campaign"}
           </Link>
         </div>
+
+        {token && <CreatorApplicationFeedback applications={applications} />}
+        {!session && status === "ready" && campaigns.length > 0 && (
+          <Link to="/login" state={{ from: "/campaigns" }} className="text-sm font-semibold text-[var(--cg-primary-dark)]">
+            Log in as a creator to apply
+          </Link>
+        )}
 
         {status === "loading" ? (
           <div className="grid gap-4 lg:grid-cols-2" aria-label="Loading campaigns">
@@ -184,10 +199,10 @@ export default function CampaignListPage() {
             description="Published campaigns will appear here. Drafts stay hidden."
             action={
               <Link
-                to="/campaigns/new"
+                to={session?.role === "creator" ? "/dashboard/creator/opportunities" : "/campaigns/new"}
                 className="inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 py-2 text-sm font-semibold text-white no-underline"
               >
-                Post a campaign
+                {session?.role === "creator" ? "My opportunities" : "Post a campaign"}
               </Link>
             }
           />
@@ -203,7 +218,17 @@ export default function CampaignListPage() {
                   campaign={campaign}
                   business={businessById.get(campaign.business_id)}
                   counties={counties}
-                />
+                >
+                  {token && applications.load.status === "ready" && (
+                    <CreatorApplicationAction
+                      key={token}
+                      campaignId={campaign.campaign_id}
+                      token={token}
+                      application={applications.load.items.find((item) => item.campaign_id === campaign.campaign_id)}
+                      onRecord={applications.record}
+                    />
+                  )}
+                </CampaignCard>
               ))}
             </div>
           </>

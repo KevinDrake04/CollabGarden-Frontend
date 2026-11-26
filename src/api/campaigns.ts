@@ -56,6 +56,26 @@ export type BusinessSummary = {
   logo_url: string | null;
 };
 
+export type ApplicationStatus = "pending" | "accepted" | "rejected" | "withdrawn";
+
+export type CampaignCreator = {
+  creator_id: number;
+  display_name: string;
+  photo_url?: string | null;
+};
+
+export type CampaignApplication = {
+  application_id: number;
+  campaign_id: number;
+  creator_id: number;
+  status: ApplicationStatus;
+  message?: string | null;
+  creator?: CampaignCreator | null;
+  campaign?: { name: string } | null;
+};
+
+export const applicationMessageLimit = 1000;
+
 export class CampaignApiError extends Error {
   readonly status: number;
   readonly campaign?: Campaign;
@@ -68,11 +88,17 @@ export class CampaignApiError extends Error {
   }
 }
 
+export function shouldRecheckApplication(error: unknown) {
+  return !(error instanceof CampaignApiError) || error.status === 409 || error.status >= 500
+    || (error.status >= 200 && error.status < 300);
+}
+
 type RequestOptions = {
   method?: string;
   body?: string;
   token?: string | null;
   signal?: AbortSignal;
+  cache?: RequestCache;
 };
 
 function baseUrl() {
@@ -111,6 +137,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     body: options.body,
     headers,
     signal: options.signal,
+    cache: options.cache,
   });
 
   const text = await response.text();
@@ -241,6 +268,45 @@ export function listOpenCampaigns(signal: AbortSignal) {
   return listCampaigns({ signal, status: "open" }).then((campaigns) =>
     campaigns.filter((campaign) => campaign.status === "open"),
   );
+}
+
+async function requestApplicationList<T>(path: string, token: string, signal?: AbortSignal) {
+  const items = await request<T[]>(path, { token, signal, cache: "no-store" });
+  if (!Array.isArray(items)) throw new CampaignApiError(200, "Couldn't read the response. Please try again.");
+  return items;
+}
+
+export function listMyApplications(token: string, signal?: AbortSignal) {
+  return requestApplicationList<CampaignApplication>("/api/v1/creators/me/applications", token, signal);
+}
+
+export async function listCampaignApplications(campaignId: number, token: string, signal?: AbortSignal) {
+  const items = await requestApplicationList<CampaignApplication>(`/api/v1/campaigns/${campaignId}/applications`, token, signal);
+  return items.filter((item) => item.campaign_id === campaignId);
+}
+
+export async function applyToCampaign(campaignId: number, message: string, token: string) {
+  const application = await request<CampaignApplication | null>(`/api/v1/campaigns/${campaignId}/applications`, {
+    method: "POST",
+    body: message ? JSON.stringify({ message }) : undefined,
+    token,
+  });
+  if (application?.campaign_id !== campaignId) throw new CampaignApiError(201, "Couldn't confirm your application.");
+  return application;
+}
+
+export async function decideApplication(application: CampaignApplication, decision: "accept" | "reject", token: string) {
+  const updated = await request<CampaignApplication | null>(`/api/v1/applications/${application.application_id}/${decision}`, {
+    method: "POST", token,
+  });
+  if (updated?.application_id !== application.application_id || updated.campaign_id !== application.campaign_id) {
+    throw new CampaignApiError(200, "Couldn't confirm the application decision.");
+  }
+  return updated;
+}
+
+export function listCampaignCreators(campaignId: number, token: string, signal?: AbortSignal) {
+  return requestApplicationList<CampaignCreator>(`/api/v1/campaigns/${campaignId}/creators`, token, signal);
 }
 
 export async function getCampaign(campaignId: number, token: string, signal?: AbortSignal) {

@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { AppButton, AppNotice, DashboardEmptyState, LoadingSkeleton, OpportunityCard } from "../../../components";
 import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../../api/campaigns";
 import { getCounties, type County } from "../../../api/directory";
+import {
+  CreatorApplicationAction,
+  CreatorApplicationFeedback,
+  CreatorApplicationHistory,
+  useCreatorApplications,
+} from "../../campaigns/CreatorApplications";
 import { countyLabel, dateLabel } from "../shared/campaignLabels";
 import {
   AccountCheck,
@@ -29,10 +35,14 @@ export function OpportunityList({
   campaigns,
   businesses,
   counties,
+  token,
+  applications,
 }: {
   campaigns: Campaign[];
   businesses: BusinessSummary[];
   counties: County[];
+  token: string;
+  applications: ReturnType<typeof useCreatorApplications>;
 }) {
   return (
     <div className="grid grid-cols-1 gap-4">
@@ -47,7 +57,17 @@ export function OpportunityList({
             description={campaign.description?.trim() || "No description was provided."}
             location={`${countyLabel(campaign.county_ids, counties)} · ${dateLabel(campaign)}`}
             category={offer}
-          />
+          >
+            {applications.load.status === "ready" && (
+              <CreatorApplicationAction
+                key={token}
+                campaignId={campaign.campaign_id}
+                token={token}
+                application={applications.load.items.find((item) => item.campaign_id === campaign.campaign_id)}
+                onRecord={applications.record}
+              />
+            )}
+          </OpportunityCard>
         );
       })}
     </div>
@@ -57,6 +77,7 @@ export function OpportunityList({
 export default function CreatorOpportunitiesPage() {
   const { session, accountState, accountError, retry } = useWorkspaceSession();
   const ready = accountState === "ready" && session?.role === "creator";
+  const applications = useCreatorApplications(ready ? session.accessToken : null);
   const [opportunities, setOpportunities] = useState<OpportunityLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -79,7 +100,7 @@ export default function CreatorOpportunitiesPage() {
         if (controller.signal.aborted) return;
         setOpportunities({
           status: "ready",
-          campaigns: campaigns.filter((campaign) => campaign.status === "open"),
+          campaigns,
           businesses,
           counties,
         });
@@ -111,11 +132,13 @@ export default function CreatorOpportunitiesPage() {
       <div className="max-w-2xl">
         <h1 className={titleClass}>Opportunities</h1>
         <p className="mt-2 text-base text-[var(--cg-muted)]">
-          Open campaigns from local businesses. These are not assigned to you.
+          Apply to open campaigns from local businesses and check your application status.
         </p>
       </div>
 
       <AccountCheck state={accountState} message={accountError} onRetry={retry} />
+
+      {ready && <CreatorApplicationFeedback applications={applications} />}
 
       {ready && opportunities.status === "loading" && (
         <div className="grid gap-4" aria-busy="true" aria-label="Loading open campaigns">
@@ -139,6 +162,14 @@ export default function CreatorOpportunitiesPage() {
           campaigns={opportunities.campaigns}
           businesses={opportunities.businesses}
           counties={opportunities.counties}
+          token={session.accessToken}
+          applications={applications}
+        />
+      )}
+      {ready && applications.load.status === "ready" && (
+        <CreatorApplicationHistory
+          items={applications.load.items}
+          visibleCampaignIds={opportunities.status === "ready" ? opportunities.campaigns.map((item) => item.campaign_id) : []}
         />
       )}
     </div>
