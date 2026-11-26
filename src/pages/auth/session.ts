@@ -34,7 +34,7 @@ export function readSession(): Session | null {
     const parsed = JSON.parse(raw) as Partial<Session>;
     const role = roleOf(parsed.role);
     if (!parsed.accessToken || !parsed.userId || !parsed.email || !role) return null;
-    return {
+    const session: Session = {
       accessToken: parsed.accessToken,
       userId: parsed.userId,
       email: parsed.email,
@@ -42,6 +42,10 @@ export function readSession(): Session | null {
       businessId: storedBusinessId(parsed),
       businessIds: storedBusinessIds(parsed),
     };
+    if (typeof parsed.refreshToken === "string" && parsed.refreshToken) {
+      session.refreshToken = parsed.refreshToken;
+    }
+    return session;
   } catch {
     return null;
   }
@@ -88,7 +92,14 @@ export function dashboardPath(role: AccountRole) {
 }
 
 function allowedPath(pathname: string, role: AccountRole) {
-  if (pathname === "/" || pathname === "/discover" || pathname === "/campaigns" || pathname === "/signup") {
+  if (
+    pathname === "/"
+    || pathname === "/discover"
+    || pathname === "/campaigns"
+    || pathname === "/signup"
+    || pathname === "/terms"
+    || pathname === "/privacy"
+  ) {
     return true;
   }
   if (/^\/businesses\/\d+$/.test(pathname) || /^\/creators\/\d+$/.test(pathname)) return true;
@@ -166,6 +177,7 @@ export function useLiveSession() {
 
 function sameSession(left: Session, right: Session) {
   return left.accessToken === right.accessToken
+    && left.refreshToken === right.refreshToken
     && left.userId === right.userId
     && left.email === right.email
     && left.role === right.role
@@ -189,6 +201,7 @@ export async function refreshSession(signal?: AbortSignal): Promise<Session | nu
       businessId: account.businessId,
       businessIds: account.businessIds,
     };
+    if (current.refreshToken) next.refreshToken = current.refreshToken;
     if (!sameSession(current, next)) writeSession(next);
     return next;
   } catch (error) {

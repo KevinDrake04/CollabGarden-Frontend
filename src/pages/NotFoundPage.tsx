@@ -2,7 +2,7 @@ import { Link } from "react-router";
 
 export default function NotFoundPage() {
   return (
-    <div className="-m-12 min-h-[calc(100dvh-4.5rem)] bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-my-8">
+    <div className="-mx-12 -mt-12 flex-1 bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-mt-8">
       <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-10 text-[var(--cg-text)] md:px-8 md:py-14">
         <div className="max-w-2xl">
           <h1 className="font-bold tracking-tight text-[var(--cg-primary-dark)]">Page not found</h1>
