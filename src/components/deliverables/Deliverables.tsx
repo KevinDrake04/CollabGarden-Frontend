@@ -3,6 +3,7 @@ import { Card, Chip } from "@heroui/react";
 import { AppButton } from "../ui/Buttons";
 import { AppInput, AppSelect, AppTextarea, type SelectOption } from "../ui/Fields";
 import { AppNotice } from "../feedback/Feedback";
+import type { DeliverableWrite } from "../../api/collaborations";
 
 const cardClass = "rounded-2xl border border-[var(--cg-border)] bg-white p-5";
 
@@ -245,7 +246,7 @@ export function DeliverableCard({
   );
 }
 
-export type AttachmentDraft = {
+type AttachmentDraft = {
   key: string;
   type: "link" | "image";
   url: string;
@@ -258,12 +259,9 @@ export type DeliverableFormValues = {
   attachments: AttachmentDraft[];
 };
 
-export type DeliverableInput = {
-  campaignId: string;
-  title: string;
-  description: string;
-  attachments: { type: "link" | "image"; url: string }[];
-};
+export type DeliverableInput =
+  | { kind: "create"; campaignId: number; content: DeliverableWrite }
+  | { kind: "edit"; changes: Partial<DeliverableWrite> };
 
 const attachmentTypeOptions: SelectOption[] = [
   { value: "link", label: "Link" },
@@ -277,50 +275,68 @@ type FormErrors = {
   attachmentRows?: Record<string, string>;
 };
 
-function attachmentUrlError(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "Enter a URL.";
-  if (Array.from(trimmed).length > 500) return "Use a URL of 500 characters or fewer.";
-  if (!/^https?:\/\/\S+$/.test(trimmed)) return "Enter an http or https URL.";
+function attachmentUrlError(url: string) {
+  if (!url) return "Enter a URL.";
+  if (Array.from(url).length > 500) return "Use a URL of 500 characters or fewer.";
+  if (!/^https?:\/\/\S+$/.test(url)) return "Enter an http or https URL.";
   try {
-    new URL(trimmed);
+    new URL(url);
   } catch {
     return "Enter an http or https URL.";
   }
   return "";
 }
 
-function cleanInput(values: DeliverableFormValues): DeliverableInput {
+function normalizeContent(values: DeliverableFormValues): DeliverableWrite {
   return {
-    campaignId: values.campaignId,
     title: values.title.trim(),
-    description: values.description.trim(),
-    attachments: values.attachments.map(({ type, url }) => ({ type, url: url.trim() })),
+    description: values.description.trim() || null,
+    attachments: values.attachments.map(({ type, url }) => ({ attachment_type: type, url: url.trim() })),
   };
 }
 
-function validate(values: DeliverableFormValues, campaigns?: SelectOption[], original?: DeliverableFormValues): FormErrors {
+function prepareInput(values: DeliverableFormValues, campaigns?: SelectOption[], original?: DeliverableFormValues) {
   const errors: FormErrors = {};
   if (campaigns && !campaigns.some((option) => option.value === values.campaignId)) {
     errors.campaignId = campaigns.length === 0 ? "No campaign is available." : "Choose a campaign.";
   }
-  const title = values.title.trim();
-  const description = values.description.trim();
-  if (!title) errors.title = "Enter a title.";
-  if (original && title !== original.title.trim() && Array.from(title).length > 200) {
-    errors.title = "Use a title of 200 characters or fewer.";
+  const content = normalizeContent(values);
+  const previous = original ? normalizeContent(original) : null;
+  const changes: Partial<DeliverableWrite> = {};
+
+  if (!previous || content.title !== previous.title) {
+    changes.title = content.title;
+    if (!content.title) errors.title = "Enter a title.";
+    else if (previous && Array.from(content.title).length > 200) {
+      errors.title = "Use a title of 200 characters or fewer.";
+    }
   }
-  if (original && description !== original.description.trim() && Array.from(description).length > 5000) {
-    errors.description = "Use a description of 5,000 characters or fewer.";
+  if (previous && content.description !== previous.description) {
+    changes.description = content.description;
+    if (Array.from(content.description ?? "").length > 5000) {
+      errors.description = "Use a description of 5,000 characters or fewer.";
+    }
   }
 
-  const attachmentRows: Record<string, string> = {};
-  for (const attachment of values.attachments) {
-    const message = attachmentUrlError(attachment.url);
-    if (message) attachmentRows[attachment.key] = message;
+  // The API replaces the whole list when attachments are included in a PATCH.
+  const attachmentsChanged = !previous || content.attachments.length !== previous.attachments.length ||
+    content.attachments.some(({ attachment_type, url }, index) =>
+      attachment_type !== previous.attachments[index].attachment_type || url !== previous.attachments[index].url,
+    );
+  if (attachmentsChanged) {
+    changes.attachments = content.attachments;
+    const attachmentRows: Record<string, string> = {};
+    content.attachments.forEach(({ url }, index) => {
+      const message = attachmentUrlError(url);
+      if (message) attachmentRows[values.attachments[index].key] = message;
+    });
+    if (Object.keys(attachmentRows).length > 0) errors.attachmentRows = attachmentRows;
   }
-  if (Object.keys(attachmentRows).length > 0) errors.attachmentRows = attachmentRows;
-  return errors;
+
+  const input: DeliverableInput = previous
+    ? { kind: "edit", changes }
+    : { kind: "create", campaignId: Number(values.campaignId), content };
+  return { errors, input };
 }
 
 export function DeliverableForm({
@@ -351,10 +367,9 @@ export function DeliverableForm({
 
   function run(action: "save" | "submit") {
     if (pending) return;
-    const nextErrors = validate(values, campaigns, mode === "create" ? undefined : initialValues);
+    const { input, errors: nextErrors } = prepareInput(values, campaigns, mode === "create" ? undefined : initialValues);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    const input = cleanInput(values);
     if (action === "save") onSave(input);
     else onSubmit(input);
   }
@@ -385,7 +400,7 @@ export function DeliverableForm({
         value={values.title}
         onChange={(title) => update({ ...values, title })}
         placeholder="Spring tasting reel"
-        required
+        required={mode === "create"}
         error={errors.title}
       />
 
@@ -497,7 +512,6 @@ export function DeliverableReview({
   blockedReason = "",
   disabled = false,
   pending = null,
-  error = "",
 }: {
   deliverable: DeliverableSummary;
   children?: ReactNode;
@@ -508,7 +522,6 @@ export function DeliverableReview({
   blockedReason?: string;
   disabled?: boolean;
   pending?: "approve" | "revision" | null;
-  error?: string;
 }) {
   const commentMissing = comment.trim().length === 0;
   const locked = Boolean(blockedReason) || disabled || pending !== null;
@@ -528,7 +541,6 @@ export function DeliverableReview({
           helper="Required for a revision request. Approve can include this comment, and it can be left blank."
         />
         {blockedReason && <p className="text-sm">{blockedReason}</p>}
-        {error && <AppNotice tone="error" message={error} />}
         <div className="flex flex-wrap gap-3">
           <AppButton
             isDisabled={locked}

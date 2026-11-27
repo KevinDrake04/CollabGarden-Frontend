@@ -1,14 +1,14 @@
 /// <reference types="vite/client" />
 
 import { verifiedBusinessIds, type Session } from "./auth";
-import { CampaignApiError, listCampaigns, type Campaign } from "./campaigns";
+import { listCampaigns, type Campaign } from "./campaigns";
 
 // Callers pass a session. Requests send its access token, and a 401 is returned
 // to the caller. A business only loads deliverables for its verified business ids.
 
-export type AttachmentType = "link" | "image";
+type AttachmentType = "link" | "image";
 
-export type Attachment = {
+type Attachment = {
   attachment_id?: number;
   attachment_type: AttachmentType;
   url: string;
@@ -36,7 +36,7 @@ export type Deliverable = {
   latest_feedback?: DeliverableFeedback | null;
 };
 
-type DeliverableWrite = {
+export type DeliverableWrite = {
   title: string;
   description: string | null;
   attachments: { attachment_type: AttachmentType; url: string }[];
@@ -64,7 +64,7 @@ export class CollaborationApiError extends Error {
   }
 }
 
-export function isAbortError(error: unknown) {
+function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
 }
 
@@ -72,6 +72,11 @@ export function collaborationErrorMessage(error: unknown) {
   if (error instanceof CollaborationApiError) return error.message;
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Could not load deliverables.";
+}
+
+export function isUncertainDeliverableWrite(error: unknown) {
+  return !(error instanceof CollaborationApiError) || error.status === 0 || error.status === 408 ||
+    error.status >= 500 || (error.status >= 200 && error.status < 300);
 }
 
 function baseUrl() {
@@ -149,7 +154,7 @@ function optionalText(value: unknown) {
 function parseAttachment(value: unknown): Attachment | null {
   if (!isRecord(value)) return null;
   const type = value.attachment_type;
-  if ((type !== "link" && type !== "image") || typeof value.url !== "string" || !value.url.trim()) {
+  if ((type !== "link" && type !== "image") || typeof value.url !== "string") {
     return null;
   }
   return {
@@ -192,17 +197,7 @@ function parseDeliverable(value: unknown): Deliverable {
   };
 }
 
-async function listWorkspaceCampaigns(token: string, signal?: AbortSignal) {
-  try {
-    return await listCampaigns({ token, signal, cache: "no-store" });
-  } catch (error) {
-    if (error instanceof CampaignApiError) throw new CollaborationApiError(error.status, error.message);
-    if (isAbortError(error)) throw error;
-    throw new CollaborationApiError(0, "Could not reach the CollabGarden API.");
-  }
-}
-
-async function listCreatorNames(signal?: AbortSignal) {
+export async function listCreatorNames(signal: AbortSignal) {
   try {
     const body = await request("/api/v1/creators", { signal });
     const names: Record<number, string> = {};
@@ -261,75 +256,58 @@ export async function loadCampaignDeliverables(
   return access.filter((entry): entry is CampaignAccess => entry !== null);
 }
 
-export async function loadCollaborationWorkspace(
-  session: Session,
-  signal?: AbortSignal,
-  options?: { includeCreatorNames?: boolean },
-) {
-  if (session.role === "business" && verifiedBusinessIds(session).length === 0) {
-    return {
-      session,
-      access: [],
-      creatorNames: {},
-    };
-  }
-
-  const includeCreatorNames = options?.includeCreatorNames !== false;
-  const [access, creatorNames] = await Promise.all([
-    listWorkspaceCampaigns(session.accessToken, signal).then((items) => loadCampaignDeliverables(items, session, signal)),
-    includeCreatorNames ? listCreatorNames(signal) : Promise.resolve({}),
-  ]);
-  return { session, access, creatorNames };
+export async function loadCreatorCampaignDeliverables(session: Session, signal: AbortSignal) {
+  const campaigns = await listCampaigns({ token: session.accessToken, signal, cache: "no-store" });
+  return loadCampaignDeliverables(campaigns, session, signal);
 }
 
-export function createDeliverable(
+export async function createDeliverable(
   campaignId: number,
   input: DeliverableWrite,
   token: string,
   signal?: AbortSignal,
 ) {
-  const description = input.description?.trim() ?? "";
-  const body: {
-    title: string;
-    description?: string;
-    attachments: DeliverableWrite["attachments"];
-  } = {
-    title: input.title.trim(),
-    attachments: input.attachments
-      .map((attachment) => ({
-        attachment_type: attachment.attachment_type,
-        url: attachment.url.trim(),
-      }))
-      .filter((attachment) => attachment.url),
-  };
-  if (description) body.description = description;
-
-  return request(`/api/v1/campaigns/${campaignId}/deliverables`, {
+  const created = parseDeliverable(await request(`/api/v1/campaigns/${campaignId}/deliverables`, {
     method: "POST",
-    body,
+    body: { ...input, description: input.description ?? undefined },
     token,
     signal,
-  }).then(parseDeliverable);
+  }));
+  if (created.campaign_id !== campaignId || created.status !== "draft") {
+    throw new CollaborationApiError(201, "Couldn't confirm the saved draft.");
+  }
+  return created;
 }
 
-export function submitDeliverable(deliverableId: number, token: string, signal?: AbortSignal) {
-  return request(`/api/v1/deliverables/${deliverableId}/submit`, {
+export async function submitDeliverable(deliverableId: number, token: string) {
+  const submitted = parseDeliverable(await request(`/api/v1/deliverables/${deliverableId}/submit`, {
     method: "POST",
     token,
-    signal,
-  }).then(parseDeliverable);
+  }));
+  if (submitted.deliverable_id !== deliverableId || submitted.status !== "submitted") {
+    throw new CollaborationApiError(200, "Couldn't confirm the submission.");
+  }
+  return submitted;
 }
 
-export function updateDeliverable(
+export function getDeliverable(deliverableId: number, token: string) {
+  return request(`/api/v1/deliverables/${deliverableId}`, { token }).then(parseDeliverable);
+}
+
+export async function updateDeliverable(
   deliverableId: number,
   input: Partial<DeliverableWrite>,
   token: string,
 ) {
-  return request(`/api/v1/deliverables/${deliverableId}`, {
+  const updated = parseDeliverable(await request(`/api/v1/deliverables/${deliverableId}`, {
     method: "PATCH",
     body: input,
     token,
-  }).then(parseDeliverable);
+  }));
+  if (updated.deliverable_id !== deliverableId) {
+    throw new CollaborationApiError(200, "Couldn't confirm the deliverable changes.");
+  }
+  return updated;
 }
 
 export async function listDeliverableFeedback(deliverableId: number, token: string) {

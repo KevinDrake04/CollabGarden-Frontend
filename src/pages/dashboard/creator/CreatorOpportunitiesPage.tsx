@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { AppButton, AppNotice, DashboardEmptyState, LoadingSkeleton, OpportunityCard } from "../../../components";
+import type { Session } from "../../../api/auth";
 import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../../api/campaigns";
-import { getCounties, type County } from "../../../api/directory";
+import { loadCounties, type County } from "../../../api/directory";
 import {
   CreatorApplicationAction,
   CreatorApplicationFeedback,
@@ -35,13 +36,13 @@ export function OpportunityList({
   campaigns,
   businesses,
   counties,
-  token,
+  session,
   applications,
 }: {
   campaigns: Campaign[];
   businesses: BusinessSummary[];
   counties: County[];
-  token: string;
+  session: Session;
   applications: ReturnType<typeof useCreatorApplications>;
 }) {
   return (
@@ -60,11 +61,12 @@ export function OpportunityList({
           >
             {applications.load.status === "ready" && (
               <CreatorApplicationAction
-                key={token}
+                key={`${session.userId}:${session.accessToken}`}
                 campaignId={campaign.campaign_id}
-                token={token}
+                session={session}
                 application={applications.load.items.find((item) => item.campaign_id === campaign.campaign_id)}
                 onRecord={applications.record}
+                reload={applications.reload}
               />
             )}
           </OpportunityCard>
@@ -77,7 +79,7 @@ export function OpportunityList({
 export default function CreatorOpportunitiesPage() {
   const { session, accountState, accountError, retry } = useWorkspaceSession();
   const ready = accountState === "ready" && session?.role === "creator";
-  const applications = useCreatorApplications(ready ? session.accessToken : null);
+  const applications = useCreatorApplications(ready ? session : null);
   const [opportunities, setOpportunities] = useState<OpportunityLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -91,10 +93,7 @@ export default function CreatorOpportunitiesPage() {
         if (isAbort(error)) throw error;
         return [] as BusinessSummary[];
       }),
-      getCounties(controller.signal).catch((error: unknown) => {
-        if (isAbort(error)) throw error;
-        return [] as County[];
-      }),
+      loadCounties().catch(() => []),
     ])
       .then(([campaigns, businesses, counties]) => {
         if (controller.signal.aborted) return;
@@ -162,7 +161,7 @@ export default function CreatorOpportunitiesPage() {
           campaigns={opportunities.campaigns}
           businesses={opportunities.businesses}
           counties={opportunities.counties}
-          token={session.accessToken}
+          session={session}
           applications={applications}
         />
       )}

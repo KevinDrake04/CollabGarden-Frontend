@@ -89,7 +89,7 @@ export class CampaignApiError extends Error {
 }
 
 export function shouldRecheckApplication(error: unknown) {
-  return !(error instanceof CampaignApiError) || error.status === 409 || error.status >= 500
+  return !(error instanceof CampaignApiError) || error.status === 408 || error.status === 409 || error.status >= 500
     || (error.status >= 200 && error.status < 300);
 }
 
@@ -293,7 +293,10 @@ export async function applyToCampaign(campaignId: number, message: string, token
     body: message ? JSON.stringify({ message }) : undefined,
     token,
   });
-  if (application?.campaign_id !== campaignId) throw new CampaignApiError(201, "Couldn't confirm your application.");
+  if (application?.campaign_id !== campaignId || !Number.isInteger(application.application_id) ||
+      !["pending", "accepted", "rejected", "withdrawn"].includes(application.status)) {
+    throw new CampaignApiError(201, "Couldn't confirm your application.");
+  }
   return application;
 }
 
@@ -301,7 +304,9 @@ export async function decideApplication(application: CampaignApplication, decisi
   const updated = await request<CampaignApplication | null>(`/api/v1/applications/${application.application_id}/${decision}`, {
     method: "POST", token,
   });
-  if (updated?.application_id !== application.application_id || updated.campaign_id !== application.campaign_id) {
+  const expectedStatus = decision === "accept" ? "accepted" : "rejected";
+  if (updated?.application_id !== application.application_id || updated.campaign_id !== application.campaign_id ||
+      updated.status !== expectedStatus) {
     throw new CampaignApiError(200, "Couldn't confirm the application decision.");
   }
   return updated;

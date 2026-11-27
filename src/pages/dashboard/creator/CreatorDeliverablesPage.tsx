@@ -19,23 +19,46 @@ import {
 import {
   collaborationErrorMessage,
   createDeliverable,
+  getDeliverable,
+  isUncertainDeliverableWrite,
+  loadCampaignDeliverables,
   submitDeliverable,
   updateDeliverable,
   upsertDeliverable,
   type CollaborationWorkspace,
   type Deliverable,
+  type DeliverableWrite,
 } from "../../../api/collaborations";
-import { dashboardPath } from "../../auth/session";
+import { dashboardPath, isCurrentSession } from "../../auth/session";
 import { DeliverableFeedback } from "../shared/DeliverableFeedback";
 import { clearSessionIfUnauthorized, useRoleWorkspace } from "../shared/useRoleWorkspace";
 import { linkClass, signedInAs, textLinkClass, titleClass } from "../shared/workspaceSession";
 
 type Feedback = { tone: "success" | "error"; message: string };
-type Pending = { action: "save" | "submit"; id?: number };
+type Pending = { action: "save" | "submit"; id?: number } | { action: "check"; id: number };
 type Editor = { kind: "new" } | { kind: "edit"; deliverable: Deliverable };
+type PendingCreate = { requestId: string; previousIds: number[]; content: DeliverableWrite };
 
 const pageClass = "flex w-full flex-col gap-6 text-[var(--cg-text)]";
 const headingClass = "text-xl font-semibold text-[var(--cg-primary-dark)]";
+
+function readPendingCreates(key: string): Record<number, PendingCreate> {
+  try {
+    return JSON.parse(sessionStorage.getItem(key) ?? "{}") ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function matchesDraft(deliverable: Deliverable, content: DeliverableWrite) {
+  return deliverable.title === content.title &&
+    (deliverable.description || null) === content.description &&
+    deliverable.attachments.length === content.attachments.length &&
+    deliverable.attachments.every((attachment, index) => {
+      const original = content.attachments[index];
+      return attachment.attachment_type === original.attachment_type && attachment.url === original.url;
+    });
+}
 
 function LoadingBlock({ label }: { label: string }) {
   return (
@@ -107,7 +130,12 @@ export default function CreatorDeliverablesPage() {
       )}
 
       {view.kind === "ready" && (
-        <CreatorWorkspace workspace={view.workspace} onAccess={updateAccess} reload={reload} />
+        <CreatorWorkspace
+          key={`${view.workspace.session.userId}:${view.workspace.session.accessToken}`}
+          workspace={view.workspace}
+          onAccess={updateAccess}
+          reload={reload}
+        />
       )}
     </div>
   );
@@ -129,12 +157,15 @@ function CreatorWorkspace({
   const [editor, setEditor] = useState<Editor | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const busy = useRef(false);
+  const { session } = workspace;
+  const createKey = `collabgarden.pendingDeliverables.${session.userId}`;
+  const [pendingCreates, setPendingCreates] = useState(() => readPendingCreates(createKey));
   const available = workspace.access.filter((entry) => !entry.error);
   const denied = workspace.access.filter((entry) => entry.error);
   const addReason = available.length === 0
     ? "Add a deliverable once a campaign is available."
     : "";
-  const formPending = pending && pending.id == null ? pending.action : null;
+  const formPending = pending?.action !== "check" && pending?.id == null ? pending?.action ?? null : null;
   const editing = editor?.kind === "edit" ? editor.deliverable : null;
   const editorTitle = editing ? "Edit deliverable" : "Add deliverable";
 
@@ -154,62 +185,126 @@ function CreatorWorkspace({
     onAccess((access) => upsertDeliverable(access, deliverable));
   }
 
+  function rememberCreate(campaignId: number, draft: PendingCreate, action: "lock" | "clear") {
+    // A response can arrive after this page has been reopened and another save has started.
+    const next = readPendingCreates(createKey);
+    if (action === "lock") {
+      next[campaignId] = draft;
+    } else {
+      if (next[campaignId]?.requestId !== draft.requestId) return;
+      delete next[campaignId];
+    }
+    sessionStorage.setItem(createKey, JSON.stringify(next));
+    setPendingCreates(next);
+  }
+
   async function save(input: DeliverableInput, action: "save" | "submit") {
-    if (busy.current || !editor) return;
+    if (busy.current || !editor || !isCurrentSession(session)) return;
+    const campaign = input.kind === "create"
+      ? available.find(({ campaign }) => campaign.campaign_id === input.campaignId)
+      : null;
+    if (input.kind === "create" && (!campaign || readPendingCreates(createKey)[input.campaignId])) {
+      setFormError(campaign ? "Check the previous draft before creating another for this campaign." : "Choose an available campaign.");
+      return;
+    }
+    if (input.kind === "edit" && (!editing || draftSubmitBlockReason(editing.status))) return;
 
     busy.current = true;
     setPending({ action });
     setFormError("");
     setFeedback(null);
-    let saved: Deliverable | null = null;
     try {
-      const token = workspace.session.accessToken;
-      const content = {
-        title: input.title,
-        description: input.description || null,
-        attachments: input.attachments.map((attachment) => ({
-          attachment_type: attachment.type,
-          url: attachment.url,
-        })),
-      };
-      if (editing) {
-        const attachmentsChanged = content.attachments.length !== editing.attachments.length ||
-          content.attachments.some((attachment, index) => {
-            const previous = editing.attachments[index];
-            return attachment.attachment_type !== previous.attachment_type || attachment.url !== previous.url;
-          });
-        const changes = {
-          ...(content.title !== editing.title.trim() && { title: content.title }),
-          ...(input.description !== (editing.description ?? "").trim() && { description: content.description }),
-          ...(attachmentsChanged && { attachments: content.attachments }),
+      let saved: Deliverable | null = null;
+      if (input.kind === "create" && campaign) {
+        // Keep the lock across reloads in case the server saves before the connection drops.
+        const draft = {
+          requestId: crypto.randomUUID(),
+          previousIds: campaign.deliverables.map((item) => item.deliverable_id),
+          content: input.content,
         };
-        if (Object.keys(changes).length > 0) {
-          saved = await updateDeliverable(editing.deliverable_id, changes, token);
+        rememberCreate(input.campaignId, draft, "lock");
+        try {
+          saved = await createDeliverable(input.campaignId, input.content, session.accessToken);
+        } catch (error) {
+          if (!isCurrentSession(session)) return;
+          if (isUncertainDeliverableWrite(error)) {
+            setEditor(null);
+            showFeedback({ tone: "error", message: "Couldn't confirm the draft. Check the campaign before creating it again." });
+            return;
+          }
+          rememberCreate(input.campaignId, draft, "clear");
+          throw error;
         }
-      } else {
-        saved = await createDeliverable(Number(input.campaignId), content, token);
+        if (!isCurrentSession(session)) return;
+        rememberCreate(input.campaignId, draft, "clear");
+      } else if (input.kind === "edit" && editing && Object.keys(input.changes).length > 0) {
+        saved = await updateDeliverable(editing.deliverable_id, input.changes, session.accessToken);
       }
+
+      if (!isCurrentSession(session)) return;
       if (saved) place(saved);
 
       const target = saved ?? editing;
       if (action === "submit" && target) {
-        await submit(target);
+        try {
+          await submit(target);
+        } catch (error) {
+          if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
+          if (!saved) {
+            setFormError(collaborationErrorMessage(error));
+            return;
+          }
+          showFeedback({
+            tone: "error",
+            message: `Saved "${saved.title}". Submission failed. ${collaborationErrorMessage(error)}`,
+          });
+        }
       } else if (saved) {
         showFeedback({
           tone: "success",
           message: `${editing ? "Changes saved" : "Draft saved"} for "${saved.title}". Status is ${deliverableStatusLabel(saved.status)}.`,
         });
+      } else {
+        showFeedback({ tone: "success", message: "No changes to save." });
       }
       setEditor(null);
     } catch (error) {
-      if (clearSessionIfUnauthorized(error)) return;
-      const message = collaborationErrorMessage(error);
-      if (saved) {
-        setEditor(null);
-        showFeedback({ tone: "error", message: `Saved "${saved.title}". Submission failed. ${message}` });
+      if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
+      setFormError(collaborationErrorMessage(error));
+    } finally {
+      busy.current = false;
+      setPending(null);
+    }
+  }
+
+  async function checkDraft(campaignId: number) {
+    const entry = available.find(({ campaign }) => campaign.campaign_id === campaignId);
+    if (!entry || busy.current || !isCurrentSession(session)) return;
+    const stored = readPendingCreates(createKey);
+    const draft = stored[campaignId];
+    if (!draft) {
+      setPendingCreates(stored);
+      return;
+    }
+    busy.current = true;
+    setPending({ action: "check", id: campaignId });
+    try {
+      const [fresh] = await loadCampaignDeliverables([entry.campaign], session);
+      if (!isCurrentSession(session)) return;
+      if (!fresh || fresh.error) throw new Error(fresh?.error ?? "Could not read this campaign's deliverables.");
+      onAccess((access) => access.map((item) => item.campaign.campaign_id === campaignId ? fresh : item));
+      const matches = fresh.deliverables.filter((item) =>
+        !draft.previousIds.includes(item.deliverable_id) && matchesDraft(item, draft.content),
+      );
+      if (matches.length === 1) {
+        rememberCreate(campaignId, draft, "clear");
+        showFeedback({ tone: "success", message: `Found "${matches[0].title}" in this campaign. Use the existing deliverable below.` });
       } else {
-        setFormError(message);
+        showFeedback({ tone: "error", message: "The draft couldn't be identified. Check again before creating another." });
       }
+    } catch (error) {
+      if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
+      showFeedback({ tone: "error", message: collaborationErrorMessage(error) });
     } finally {
       busy.current = false;
       setPending(null);
@@ -217,7 +312,16 @@ function CreatorWorkspace({
   }
 
   async function submit(deliverable: Deliverable) {
-    const updated = await submitDeliverable(deliverable.deliverable_id, workspace.session.accessToken);
+    const id = deliverable.deliverable_id;
+    let updated: Deliverable;
+    try {
+      updated = await submitDeliverable(id, session.accessToken);
+    } catch (error) {
+      if (!isUncertainDeliverableWrite(error) || !isCurrentSession(session)) throw error;
+      updated = await getDeliverable(id, session.accessToken);
+      if (updated.deliverable_id !== id || updated.status !== "submitted") throw error;
+    }
+    if (!isCurrentSession(session)) return;
     place(updated);
     showFeedback({
       tone: "success",
@@ -226,14 +330,14 @@ function CreatorWorkspace({
   }
 
   async function submitExisting(deliverable: Deliverable) {
-    if (busy.current || draftSubmitBlockReason(deliverable.status)) return;
+    if (busy.current || draftSubmitBlockReason(deliverable.status) || !isCurrentSession(session)) return;
     busy.current = true;
     setPending({ action: "submit", id: deliverable.deliverable_id });
     setFeedback(null);
     try {
       await submit(deliverable);
     } catch (error) {
-      if (clearSessionIfUnauthorized(error)) return;
+      if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
       showFeedback({ tone: "error", message: collaborationErrorMessage(error) });
     } finally {
       busy.current = false;
@@ -267,6 +371,15 @@ function CreatorWorkspace({
           <AppNotice tone={feedback.tone} message={feedback.message} onClose={() => setFeedback(null)} />
         )}
       </div>
+
+      {available.filter(({ campaign }) => pendingCreates[campaign.campaign_id]).map(({ campaign }) => (
+        <div key={campaign.campaign_id} className="flex flex-wrap items-center gap-2">
+          <span className="text-sm">Check the previous draft for {campaign.name}.</span>
+          <AppButton variant="secondary" isDisabled={pending !== null} onPress={() => checkDraft(campaign.campaign_id)}>
+            {pending?.action === "check" && pending.id === campaign.campaign_id ? "Checking..." : "Check saved draft"}
+          </AppButton>
+        </div>
+      ))}
 
       {denied.map((entry) => (
         <AppNotice
@@ -426,7 +539,7 @@ function StatusGroups({
                     )}
                   >
                     {status !== "draft" && (
-                      <DeliverableFeedback deliverable={deliverable} token={workspace.session.accessToken} />
+                      <DeliverableFeedback deliverable={deliverable} session={workspace.session} />
                     )}
                     {!reason && (
                       <div className="flex flex-wrap items-center gap-2 border-t border-[var(--cg-border)] pt-3">

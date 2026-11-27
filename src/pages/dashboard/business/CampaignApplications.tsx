@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   CampaignApiError,
@@ -10,21 +10,21 @@ import {
   type CampaignCreator,
 } from "../../../api/campaigns";
 import { AppAvatar, AppButton, AppNotice, LoadingSkeleton } from "../../../components";
-import { expireSession } from "../../auth/session";
+import { expireSession, isCurrentSession, type Session } from "../../auth/session";
 import { ApplicationStatusChip } from "../../campaigns/ApplicationStatus";
 import { textLinkClass } from "../shared/workspaceSession";
 
 type Load<T> = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; items: T[] };
 
-function getErrorMessage(error: unknown, fallback: string) {
+function getErrorMessage(error: unknown, fallback: string, session: Session) {
   if (error instanceof CampaignApiError) {
-    if (error.status === 401) expireSession();
+    if (error.status === 401) expireSession(session);
     return error.message;
   }
   return fallback;
 }
 
-export function CampaignApplications({ campaignId, token }: { campaignId: number; token: string }) {
+export function CampaignApplications({ campaignId, session }: { campaignId: number; session: Session }) {
   const [opened, setOpened] = useState(false);
 
   return (
@@ -34,54 +34,70 @@ export function CampaignApplications({ campaignId, token }: { campaignId: number
       <summary className="w-fit cursor-pointer rounded-sm py-2 text-sm font-semibold text-[var(--cg-primary-dark)]">
         Applications and creators
       </summary>
-      {opened && <CampaignApplicationPanel campaignId={campaignId} token={token} />}
+      {opened && <CampaignApplicationPanel campaignId={campaignId} session={session} />}
     </details>
   );
 }
 
-function CampaignApplicationPanel({ campaignId, token }: { campaignId: number; token: string }) {
+function CampaignApplicationPanel({ campaignId, session }: { campaignId: number; session: Session }) {
   const [applications, setApplications] = useState<Load<CampaignApplication>>({ status: "loading" });
   const [creators, setCreators] = useState<Load<CampaignCreator>>({ status: "loading" });
   const [applicationAttempt, setApplicationAttempt] = useState(0);
   const [creatorAttempt, setCreatorAttempt] = useState(0);
   const [saving, setSaving] = useState<{ id: number; decision: "accept" | "reject" } | null>(null);
   const [decisionError, setDecisionError] = useState<{ id: number; message: string } | null>(null);
+  const unconfirmed = useRef<{ id: number; message: string } | null>(null);
+  const deciding = useRef(false);
+
+  const loadApplications = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const items = await listCampaignApplications(campaignId, session.accessToken, signal);
+      if (signal?.aborted || !isCurrentSession(session)) return;
+      const decision = unconfirmed.current;
+      if (decision) {
+        const updated = items.find((item) => item.application_id === decision.id);
+        if (updated?.status === "accepted") setCreatorAttempt((current) => current + 1);
+        setDecisionError(updated?.status === "pending" ? decision : null);
+        unconfirmed.current = null;
+      }
+      setApplications({ status: "ready", items });
+    } catch (error) {
+      if (signal?.aborted || !isCurrentSession(session)) return;
+      const fallback = unconfirmed.current ? "Couldn't verify the application status." : "Couldn't load applications.";
+      setApplications({ status: "error", message: getErrorMessage(error, fallback, session) });
+    }
+  }, [campaignId, session]);
 
   useEffect(() => {
     const controller = new AbortController();
-    setApplications({ status: "loading" });
-    listCampaignApplications(campaignId, token, controller.signal)
-      .then((items) => {
-        if (!controller.signal.aborted) setApplications({ status: "ready", items });
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setApplications({ status: "error", message: getErrorMessage(error, "Couldn't load applications.") });
-      });
+    void loadApplications(controller.signal);
     return () => controller.abort();
-  }, [campaignId, token, applicationAttempt]);
+  }, [loadApplications, applicationAttempt]);
 
   useEffect(() => {
     const controller = new AbortController();
     setCreators({ status: "loading" });
-    listCampaignCreators(campaignId, token, controller.signal)
+    listCampaignCreators(campaignId, session.accessToken, controller.signal)
       .then((items) => {
-        if (!controller.signal.aborted) setCreators({ status: "ready", items });
+        if (!controller.signal.aborted && isCurrentSession(session)) setCreators({ status: "ready", items });
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setCreators({ status: "error", message: getErrorMessage(error, "Couldn't load assigned creators.") });
+        if (controller.signal.aborted || !isCurrentSession(session)) return;
+        setCreators({ status: "error", message: getErrorMessage(error, "Couldn't load assigned creators.", session) });
       });
     return () => controller.abort();
-  }, [campaignId, token, creatorAttempt]);
+  }, [campaignId, session, creatorAttempt]);
 
   async function decide(application: CampaignApplication, decision: "accept" | "reject") {
-    if (saving || applications.status !== "ready" || application.status !== "pending") return;
+    if (deciding.current || unconfirmed.current || applications.status !== "ready" ||
+        application.status !== "pending" || !isCurrentSession(session)) return;
+    deciding.current = true;
     const id = application.application_id;
     setSaving({ id, decision });
     setDecisionError(null);
     try {
-      const updated = await decideApplication(application, decision, token);
+      const updated = await decideApplication(application, decision, session.accessToken);
+      if (!isCurrentSession(session)) return;
       setApplications({
         status: "ready",
         items: applications.items.map((item) => item.application_id === id
@@ -90,20 +106,16 @@ function CampaignApplicationPanel({ campaignId, token }: { campaignId: number; t
       });
       if (updated.status === "accepted") setCreatorAttempt((current) => current + 1);
     } catch (error) {
-      setDecisionError({ id, message: getErrorMessage(error, "Couldn't update the application.") });
+      if (!isCurrentSession(session)) return;
+      const message = getErrorMessage(error, "Couldn't update the application.", session);
       if (shouldRecheckApplication(error)) {
-        // Read back the decision before allowing another write after an uncertain response.
-        try {
-          const items = await listCampaignApplications(campaignId, token);
-          setApplications({ status: "ready", items });
-          if (items.find((item) => item.application_id === id)?.status === "accepted") {
-            setCreatorAttempt((current) => current + 1);
-          }
-        } catch (reloadError) {
-          setApplications({ status: "error", message: getErrorMessage(reloadError, "Couldn't verify the application status.") });
-        }
+        unconfirmed.current = { id, message };
+        await loadApplications();
+      } else {
+        setDecisionError({ id, message });
       }
     } finally {
+      deciding.current = false;
       setSaving(null);
     }
   }
@@ -117,8 +129,7 @@ function CampaignApplicationPanel({ campaignId, token }: { campaignId: number; t
           <>
             <AppNotice tone="error" message={applications.message} />
             <AppButton variant="secondary" onPress={() => {
-              if (decisionError) setCreatorAttempt((current) => current + 1);
-              setDecisionError(null);
+              setApplications({ status: "loading" });
               setApplicationAttempt((current) => current + 1);
             }}>Retry applications</AppButton>
           </>

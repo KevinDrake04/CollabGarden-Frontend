@@ -11,11 +11,7 @@ import {
   toDeliverableSummary,
 } from "../../../components";
 import { verifiedBusinessIds } from "../../../api/auth";
-import {
-  BusinessSwitcher,
-  useBusinessNames,
-  useSelectedBusiness,
-} from "../shared/selectedBusiness";
+import { BusinessSwitcher, useBusinessNames } from "../shared/selectedBusiness";
 import {
   approveDeliverable,
   collaborationErrorMessage,
@@ -24,7 +20,7 @@ import {
   type CollaborationWorkspace,
   type Deliverable,
 } from "../../../api/collaborations";
-import { dashboardPath } from "../../auth/session";
+import { dashboardPath, isCurrentSession } from "../../auth/session";
 import { DeliverableFeedback } from "../shared/DeliverableFeedback";
 import { clearSessionIfUnauthorized, useRoleWorkspace } from "../shared/useRoleWorkspace";
 import { linkClass, signedInAs, textLinkClass, titleClass } from "../shared/workspaceSession";
@@ -47,7 +43,8 @@ function LoadingBlock({ label }: { label: string }) {
 
 export default function BusinessReviewPage() {
   const returnPath = "/dashboard/business/review";
-  const { view, reload, updateAccess } = useRoleWorkspace("business");
+  const { view, reload, updateAccess, active, ids, selected, choose } = useRoleWorkspace("business");
+  const names = useBusinessNames(ids.length > 1 ? ids : []);
 
   return (
     <div className={pageClass}>
@@ -62,6 +59,8 @@ export default function BusinessReviewPage() {
           Approve submitted deliverables or request a revision for this business.
         </p>
       </div>
+
+      <BusinessSwitcher ids={ids} names={names} selected={selected} onChange={choose} />
 
       {(view.kind === "checking" || view.kind === "loading") && (
         <LoadingBlock label={view.kind === "checking" ? "Checking this account..." : "Loading deliverables."} />
@@ -104,44 +103,15 @@ export default function BusinessReviewPage() {
         </div>
       )}
 
-      {view.kind === "ready" && (
-        <ScopedBusinessReview workspace={view.workspace} onAccess={updateAccess} reload={reload} />
+      {active && (
+        <BusinessWorkspace
+          key={`${active.userId}:${active.accessToken}`}
+          workspace={view.kind === "ready" ? view.workspace : null}
+          onAccess={updateAccess}
+          reload={reload}
+        />
       )}
     </div>
-  );
-}
-
-function ScopedBusinessReview({
-  workspace,
-  onAccess,
-  reload,
-}: {
-  workspace: CollaborationWorkspace;
-  onAccess: (
-    update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],
-  ) => void;
-  reload: () => void;
-}) {
-  const ids = verifiedBusinessIds(workspace.session);
-  const { selected, choose } = useSelectedBusiness(
-    workspace.session.userId,
-    ids,
-    workspace.session.businessId,
-    true,
-  );
-  const names = useBusinessNames(ids);
-  const scoped = selected == null
-    ? workspace
-    : {
-        ...workspace,
-        access: workspace.access.filter((entry) => entry.campaign.business_id === selected),
-      };
-
-  return (
-    <>
-      <BusinessSwitcher ids={ids} names={names} selected={selected} onChange={choose} />
-      <BusinessWorkspace workspace={scoped} onAccess={onAccess} reload={reload} />
-    </>
   );
 }
 
@@ -150,7 +120,7 @@ function BusinessWorkspace({
   onAccess,
   reload,
 }: {
-  workspace: CollaborationWorkspace;
+  workspace: CollaborationWorkspace | null;
   onAccess: (
     update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],
   ) => void;
@@ -160,6 +130,8 @@ function BusinessWorkspace({
   const [comments, setComments] = useState<Record<number, string>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const busy = useRef(false);
+  if (!workspace) return null;
+  const { session } = workspace;
   const available = workspace.access.filter((entry) => !entry.error);
   const denied = workspace.access.filter((entry) => entry.error);
   const unlinkedBusiness = verifiedBusinessIds(workspace.session).length === 0;
@@ -178,7 +150,7 @@ function BusinessWorkspace({
   async function review(deliverable: Deliverable, action: "approve" | "revision") {
     const blocked = reviewBlockReason(deliverable.status);
     const comment = comments[deliverable.deliverable_id] ?? "";
-    if (busy.current || blocked) return;
+    if (busy.current || blocked || !isCurrentSession(session)) return;
     if (action === "revision" && !comment.trim()) return;
 
     busy.current = true;
@@ -187,8 +159,9 @@ function BusinessWorkspace({
     try {
       const updated =
         action === "approve"
-          ? await approveDeliverable(deliverable.deliverable_id, comment, workspace.session.accessToken)
-          : await requestRevision(deliverable.deliverable_id, comment, workspace.session.accessToken);
+          ? await approveDeliverable(deliverable.deliverable_id, comment, session.accessToken)
+          : await requestRevision(deliverable.deliverable_id, comment, session.accessToken);
+      if (!isCurrentSession(session)) return;
       place(updated);
       setComments((current) => ({ ...current, [deliverable.deliverable_id]: "" }));
       showFeedback({
@@ -196,7 +169,7 @@ function BusinessWorkspace({
         message: `${action === "approve" ? "Approved" : "Requested a revision for"} "${updated.title}". Status is ${deliverableStatusLabel(updated.status)}.`,
       });
     } catch (error) {
-      if (clearSessionIfUnauthorized(error)) return;
+      if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
       showFeedback({ tone: "error", message: collaborationErrorMessage(error) });
     } finally {
       busy.current = false;
@@ -347,7 +320,7 @@ function ReviewGroup({
             pending={pending?.id === deliverable.deliverable_id ? pending.action : null}
           >
             {status !== "draft" && (
-              <DeliverableFeedback deliverable={deliverable} token={workspace.session.accessToken} />
+              <DeliverableFeedback deliverable={deliverable} session={workspace.session} />
             )}
           </DeliverableReview>
         ))

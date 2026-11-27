@@ -6,6 +6,7 @@ import {
   type Deliverable,
   type DeliverableFeedback as Feedback,
 } from "../../../api/collaborations";
+import { isCurrentSession, type Session } from "../../auth/session";
 import { clearSessionIfUnauthorized } from "./useRoleWorkspace";
 
 type History =
@@ -31,26 +32,30 @@ function FeedbackEntry({ entry }: { entry: Feedback }) {
   );
 }
 
-export function DeliverableFeedback({ deliverable, token }: { deliverable: Deliverable; token: string }) {
+export function DeliverableFeedback({ deliverable, session }: { deliverable: Deliverable; session: Session }) {
   const [history, setHistory] = useState<History | null>(null);
+  const latest = deliverable.latest_feedback;
+  const historyIncludesLatest = history?.status === "ready" &&
+    history.entries.some((entry) => entry.feedback_id === latest?.feedback_id);
 
   async function loadHistory() {
+    if (!isCurrentSession(session)) return;
     setHistory({ status: "loading" });
     try {
-      const entries = await listDeliverableFeedback(deliverable.deliverable_id, token);
-      setHistory({ status: "ready", entries });
+      const entries = await listDeliverableFeedback(deliverable.deliverable_id, session.accessToken);
+      if (isCurrentSession(session)) setHistory({ status: "ready", entries });
     } catch (error) {
-      if (clearSessionIfUnauthorized(error)) return;
+      if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
       setHistory({ status: "error", message: collaborationErrorMessage(error) });
     }
   }
 
   return (
     <div className="group flex flex-col gap-2 border-t border-[var(--cg-border)] pt-3">
-      {deliverable.latest_feedback && (
-        <div className={history?.status === "ready" ? "group-has-[details[open]]:hidden" : undefined}>
+      {latest && (
+        <div className={historyIncludesLatest ? "group-has-[details[open]]:hidden" : undefined}>
           <h4 className="mb-1 text-sm font-semibold">Latest feedback</h4>
-          <FeedbackEntry entry={deliverable.latest_feedback} />
+          <FeedbackEntry entry={latest} />
         </div>
       )}
       <details onToggle={(event) => {
@@ -68,7 +73,9 @@ export function DeliverableFeedback({ deliverable, token }: { deliverable: Deliv
             </>
           )}
           {history?.status === "ready" && (
-            history.entries.length === 0 ? <p className="text-sm">No feedback yet.</p> : (
+            history.entries.length === 0 ? (
+              <p className="text-sm">{latest ? "No additional feedback in history." : "No feedback yet."}</p>
+            ) : (
               <ul className="flex w-full flex-col gap-3">
                 {history.entries.map((entry) => (
                   <li key={entry.feedback_id} className="rounded-lg bg-[var(--cg-surface)] p-3">

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { AppAvatar } from "../../../components";
-import { AuthError, fetchAccount, type AccountProfile } from "../../../api/auth";
-import { countyNameForId, getCounties, getCreator, type County, type Creator } from "../../../api/directory";
-import { expireSession } from "../../auth/session";
+import type { AccountProfile } from "../../../api/auth";
+import { countyNameForId, getCreator, loadCounties, type County, type Creator } from "../../../api/directory";
+import { isCurrentSession } from "../../auth/session";
 import {
   AccountCheck,
   AccountField,
@@ -29,26 +29,23 @@ type ProfileLoad = {
 const emptyProfile: ProfileLoad = { account: null, creator: null, missing: false, counties: [] };
 
 export default function CreatorAccountPage() {
-  const { session, accountState, accountError, retry } = useWorkspaceSession();
+  const { session, account, accountState, accountError, retry } = useWorkspaceSession();
   const ready = accountState === "ready" && session?.role === "creator";
   const [profile, setProfile] = useState<ProfileLoad>(emptyProfile);
   const [profileState, setProfileState] = useState<"loading" | "ready">("loading");
 
   useEffect(() => {
-    if (!ready || !session) {
+    if (!ready || !session || !account) {
       setProfile(emptyProfile);
       setProfileState("loading");
       return;
     }
     const controller = new AbortController();
     setProfileState("loading");
-    fetchAccount(session.accessToken, controller.signal)
-      .then(async (account) => {
-        if (controller.signal.aborted) return;
-        const counties = await getCounties(controller.signal).catch((error: unknown) => {
-          if (isAbort(error)) throw error;
-          return [] as County[];
-        });
+    loadCounties()
+      .catch(() => [] as County[])
+      .then(async (counties) => {
+        if (controller.signal.aborted || !isCurrentSession(session)) return;
         if (account.creatorId == null) {
           setProfile({ account, creator: null, missing: false, counties });
           setProfileState("ready");
@@ -56,26 +53,18 @@ export default function CreatorAccountPage() {
         }
         try {
           const creator = await getCreator(account.creatorId, controller.signal);
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted || !isCurrentSession(session)) return;
           const matched = creator.creator_id === account.creatorId ? creator : null;
           setProfile({ account, creator: matched, missing: matched == null, counties });
           setProfileState("ready");
         } catch (error) {
-          if (controller.signal.aborted || isAbort(error)) return;
+          if (controller.signal.aborted || !isCurrentSession(session) || isAbort(error)) return;
           setProfile({ account, creator: null, missing: true, counties });
           setProfileState("ready");
         }
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbort(error)) return;
-        if (error instanceof AuthError && error.status === 401) {
-          expireSession();
-          return;
-        }
-        setProfileState("ready");
       });
     return () => controller.abort();
-  }, [ready, session]);
+  }, [ready, session, account]);
 
   if (!session || session.role !== "creator") {
     return (

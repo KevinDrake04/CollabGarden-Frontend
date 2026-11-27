@@ -1,50 +1,23 @@
 import { useEffect, useState } from "react";
-import { AuthError, fetchAccount } from "../../../api/auth";
+import type { AccountProfile } from "../../../api/auth";
 import { getCreator } from "../../../api/directory";
-import { expireSession, type Session } from "../../auth/session";
 
-function isAbort(error: unknown) {
-  return error instanceof Error && error.name === "AbortError";
-}
-
-export function useCreatorGreeting(session: Session | null) {
-  const [displayName, setDisplayName] = useState("");
-  const [bio, setBio] = useState("");
+export function useCreatorGreeting(account: AccountProfile | null) {
+  const [greeting, setGreeting] = useState<{ account: AccountProfile; displayName: string; bio: string } | null>(null);
 
   useEffect(() => {
-    if (!session) {
-      setDisplayName("");
-      setBio("");
-      return;
-    }
+    if (!account || account.creatorId == null) return;
     const controller = new AbortController();
-    fetchAccount(session.accessToken, controller.signal)
-      .then(async (account) => {
+    getCreator(account.creatorId, controller.signal)
+      .then((creator) => {
         if (controller.signal.aborted) return;
-        const fallback = account.displayName || session.email;
-        if (account.creatorId == null) {
-          setDisplayName(fallback);
-          setBio("");
-          return;
-        }
-        try {
-          const creator = await getCreator(account.creatorId, controller.signal);
-          if (controller.signal.aborted) return;
-          const matched = creator.creator_id === account.creatorId ? creator : null;
-          setDisplayName(matched?.display_name.trim() || fallback);
-          setBio(matched?.bio?.trim() || "");
-        } catch (error) {
-          if (controller.signal.aborted || isAbort(error)) return;
-          setDisplayName(fallback);
-          setBio("");
-        }
+        if (creator.creator_id !== account.creatorId) return;
+        setGreeting({ account, displayName: creator.display_name.trim(), bio: creator.bio?.trim() || "" });
       })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbort(error)) return;
-        if (error instanceof AuthError && error.status === 401) expireSession();
-      });
+      .catch(() => {});
     return () => controller.abort();
-  }, [session]);
+  }, [account]);
 
-  return { displayName, bio };
+  const current = greeting?.account === account ? greeting : null;
+  return { displayName: current?.displayName || account?.displayName, bio: current?.bio || "" };
 }

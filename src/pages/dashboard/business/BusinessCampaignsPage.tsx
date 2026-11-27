@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { AppButton, AppNotice, DashboardEmptyState, LoadingSkeleton } from "../../../components";
 import { verifiedBusinessIds } from "../../../api/auth";
-import { listCampaigns, type Campaign } from "../../../api/campaigns";
-import { getCounties, type County } from "../../../api/directory";
+import { loadCounties, type County } from "../../../api/directory";
 import { CampaignStack } from "./BusinessDashboard";
+import { useBusinessCampaigns } from "./useBusinessCampaigns";
 import { BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "../shared/selectedBusiness";
 import {
   AccountCheck,
@@ -14,60 +14,24 @@ import {
   WorkspaceAccess,
 } from "../shared/workspaceSession";
 
-type CampaignLoad =
-  | { status: "idle" | "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; campaigns: Campaign[]; counties: County[] };
-
-function isAbort(error: unknown) {
-  return error instanceof Error && error.name === "AbortError";
-}
-
 export default function BusinessCampaignsPage() {
   const { session, accountState, accountError, retry } = useWorkspaceSession();
   const ids = session?.role === "business" ? verifiedBusinessIds(session) : [];
-  const businessKey = ids.join(",");
   const ready = accountState === "ready" && session?.role === "business";
   const { selected, choose } = useSelectedBusiness(session?.userId ?? null, ids, session?.businessId ?? null, ready);
-  const names = useBusinessNames(ready ? ids : []);
-  const [campaignLoad, setCampaignLoad] = useState<CampaignLoad>({ status: "idle" });
-  const [attempt, setAttempt] = useState(0);
+  const names = useBusinessNames(ready && ids.length > 1 ? ids : []);
+  const { load: campaignLoad, retry: retryCampaigns } = useBusinessCampaigns(ready ? session : null);
+  const [counties, setCounties] = useState<County[]>([]);
+  const hasBusinesses = ids.length > 0;
 
   useEffect(() => {
-    const allowed = businessKey ? businessKey.split(",").map(Number) : [];
-    if (!ready || !session || selected == null || !allowed.includes(selected)) {
-      setCampaignLoad({ status: "idle" });
-      return;
-    }
+    if (!ready || !hasBusinesses) return;
     const controller = new AbortController();
-    const businessId = selected;
-    setCampaignLoad({ status: "loading" });
-    Promise.all([
-      listCampaigns({ signal: controller.signal, token: session.accessToken }),
-      getCounties(controller.signal).catch((error: unknown) => {
-        if (isAbort(error)) throw error;
-        return [] as County[];
-      }),
-    ])
-      .then(([campaigns, counties]) => {
-        if (controller.signal.aborted) return;
-        setCampaignLoad({
-          status: "ready",
-          campaigns: campaigns
-            .filter((campaign) => campaign.business_id === businessId)
-            .sort((left, right) => left.campaign_id - right.campaign_id),
-          counties,
-        });
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbort(error)) return;
-        setCampaignLoad({
-          status: "error",
-          message: error instanceof Error && error.message ? error.message : "Couldn't load campaigns.",
-        });
-      });
+    loadCounties().then((items) => {
+      if (!controller.signal.aborted) setCounties(items);
+    }).catch(() => {});
     return () => controller.abort();
-  }, [ready, session, selected, businessKey, attempt]);
+  }, [ready, hasBusinesses]);
 
   if (!session || session.role !== "business") {
     return (
@@ -115,7 +79,7 @@ export default function BusinessCampaignsPage() {
       {ready && campaignLoad.status === "error" && (
         <div className="space-y-3">
           <AppNotice tone="error" message={campaignLoad.message} />
-          <AppButton variant="secondary" onPress={() => setAttempt((value) => value + 1)}>
+          <AppButton variant="secondary" onPress={retryCampaigns}>
             Try again
           </AppButton>
         </div>
@@ -124,7 +88,7 @@ export default function BusinessCampaignsPage() {
         <DashboardEmptyState message="No campaigns were returned for this business." />
       )}
       {ready && campaignLoad.status === "ready" && campaigns.length > 0 && (
-        <CampaignStack campaigns={campaigns} counties={campaignLoad.counties} token={session.accessToken} />
+        <CampaignStack campaigns={campaigns} counties={counties} session={session} />
       )}
     </div>
   );

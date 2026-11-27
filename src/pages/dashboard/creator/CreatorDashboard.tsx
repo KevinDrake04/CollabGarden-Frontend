@@ -12,12 +12,12 @@ import {
   CollaborationApiError,
   collaborationErrorMessage,
   deliverableStatusCounts,
-  loadCollaborationWorkspace,
+  loadCreatorCampaignDeliverables,
   type CampaignAccess,
 } from "../../../api/collaborations";
-import { getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../../api/campaigns";
-import { getCounties, type County } from "../../../api/directory";
-import { expireSession } from "../../auth/session";
+import { CampaignApiError, getBusinesses, listOpenCampaigns, type BusinessSummary, type Campaign } from "../../../api/campaigns";
+import { loadCounties, type County } from "../../../api/directory";
+import { expireSession, isCurrentSession, type Session } from "../../auth/session";
 import { CreatorApplicationFeedback, CreatorApplicationHistory, useCreatorApplications } from "../../campaigns/CreatorApplications";
 import { DeliverableOverview } from "../shared/DeliverableOverview";
 import { OpportunityList } from "./CreatorOpportunitiesPage";
@@ -38,17 +38,17 @@ type OpportunityLoad =
 type DeliverableLoad =
   | { status: "idle" | "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; access: CampaignAccess[] };
+  | { status: "ready"; session: Session; access: CampaignAccess[] };
 
 function isAbort(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
 }
 
 export default function CreatorDashboard() {
-  const { session, accountState, accountError, retry } = useWorkspaceSession();
+  const { session, account, accountState, accountError, retry } = useWorkspaceSession();
   const ready = accountState === "ready" && session?.role === "creator";
-  const applications = useCreatorApplications(ready ? session.accessToken : null);
-  const greeting = useCreatorGreeting(ready ? session : null);
+  const applications = useCreatorApplications(ready ? session : null);
+  const greeting = useCreatorGreeting(ready ? account : null);
   const [opportunities, setOpportunities] = useState<OpportunityLoad>({ status: "idle" });
   const [opportunityAttempt, setOpportunityAttempt] = useState(0);
   const [deliverables, setDeliverables] = useState<DeliverableLoad>({ status: "idle" });
@@ -67,10 +67,7 @@ export default function CreatorDashboard() {
         if (isAbort(error)) throw error;
         return [] as BusinessSummary[];
       }),
-      getCounties(controller.signal).catch((error: unknown) => {
-        if (isAbort(error)) throw error;
-        return [] as County[];
-      }),
+      loadCounties().catch(() => []),
     ])
       .then(([campaigns, businesses, counties]) => {
         if (controller.signal.aborted) return;
@@ -98,14 +95,14 @@ export default function CreatorDashboard() {
     }
     const controller = new AbortController();
     setDeliverables({ status: "loading" });
-    loadCollaborationWorkspace(session, controller.signal, { includeCreatorNames: false })
-      .then((workspace) => {
-        if (!controller.signal.aborted) setDeliverables({ status: "ready", access: workspace.access });
+    loadCreatorCampaignDeliverables(session, controller.signal)
+      .then((access) => {
+        if (!controller.signal.aborted && isCurrentSession(session)) setDeliverables({ status: "ready", session, access });
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbort(error)) return;
-        if (error instanceof CollaborationApiError && error.status === 401) {
-          expireSession();
+        if (controller.signal.aborted || !isCurrentSession(session)) return;
+        if ((error instanceof CollaborationApiError || error instanceof CampaignApiError) && error.status === 401) {
+          expireSession(session);
           setDeliverables({ status: "idle" });
           return;
         }
@@ -129,10 +126,11 @@ export default function CreatorDashboard() {
   const displayName = greeting.displayName || session.email;
   const openCount = opportunities.status === "ready" ? opportunities.campaigns.length : null;
   const featuredCampaigns = opportunities.status === "ready" ? opportunities.campaigns.slice(0, 3) : [];
-  const deliverableCounts = deliverables.status === "ready" ? deliverableStatusCounts(deliverables.access) : null;
+  const access = deliverables.status === "ready" && deliverables.session === session ? deliverables.access : null;
+  const deliverableCounts = access ? deliverableStatusCounts(access) : null;
   let deliverableStatus: "loading" | "error" | "ready" = "loading";
   if (deliverables.status === "error") deliverableStatus = "error";
-  if (deliverables.status === "ready") deliverableStatus = "ready";
+  if (access) deliverableStatus = "ready";
 
   return (
     <div className="flex flex-col gap-8">
@@ -197,7 +195,7 @@ export default function CreatorDashboard() {
                 campaigns={featuredCampaigns}
                 businesses={opportunities.businesses}
                 counties={opportunities.counties}
-                token={session.accessToken}
+                session={session}
                 applications={applications}
               />
             )}
@@ -214,7 +212,7 @@ export default function CreatorDashboard() {
             <h2 className="text-xl font-semibold text-[var(--cg-primary-dark)]">My Deliverables</h2>
             <DeliverableOverview
               status={deliverableStatus}
-              access={deliverables.status === "ready" ? deliverables.access : []}
+              access={access ?? []}
               message={deliverables.status === "error" ? deliverables.message : ""}
               onRetry={() => setDeliverableAttempt((value) => value + 1)}
               emptyMessage="No deliverables yet."

@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { Chip } from "@heroui/react";
 import { Calendar, MapPin } from "lucide-react";
 import { AppAvatar, AppButton, AppNotice, EmptyState, LoadingSkeleton } from "../../components";
-import { getCounties, type County } from "../../api/directory";
+import { loadCounties, type County } from "../../api/directory";
 import {
   getBusinesses,
   listOpenCampaigns,
@@ -125,8 +125,8 @@ function CampaignCard({
 
 export default function CampaignListPage() {
   const session = useLiveSession();
-  const token = session?.role === "creator" ? session.accessToken : null;
-  const applications = useCreatorApplications(token);
+  const creator = session?.role === "creator" ? session : null;
+  const applications = useCreatorApplications(creator);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [businesses, setBusinesses] = useState<BusinessSummary[]>([]);
   const [counties, setCounties] = useState<County[]>([]);
@@ -139,16 +139,17 @@ export default function CampaignListPage() {
     Promise.all([
       listOpenCampaigns(controller.signal),
       getBusinesses(controller.signal),
-      getCounties(controller.signal),
+      loadCounties(),
     ])
       .then(([campaignList, businessList, countyList]) => {
+        if (controller.signal.aborted) return;
         setCampaigns(campaignList);
         setBusinesses(businessList);
         setCounties(countyList);
         setStatus("ready");
       })
       .catch((error: Error) => {
-        if (error.name !== "AbortError") setStatus("error");
+        if (!controller.signal.aborted && error.name !== "AbortError") setStatus("error");
       });
     return () => controller.abort();
   }, [retry]);
@@ -174,7 +175,7 @@ export default function CampaignListPage() {
           </Link>
         </div>
 
-        {token && <CreatorApplicationFeedback applications={applications} />}
+        {creator && <CreatorApplicationFeedback applications={applications} />}
         {!session && status === "ready" && campaigns.length > 0 && (
           <Link to="/login" state={{ from: "/campaigns" }} className="text-sm font-semibold text-[var(--cg-primary-dark)]">
             Log in as a creator to apply
@@ -219,13 +220,14 @@ export default function CampaignListPage() {
                   business={businessById.get(campaign.business_id)}
                   counties={counties}
                 >
-                  {token && applications.load.status === "ready" && (
+                  {creator && applications.load.status === "ready" && (
                     <CreatorApplicationAction
-                      key={token}
+                      key={`${creator.userId}:${creator.accessToken}`}
                       campaignId={campaign.campaign_id}
-                      token={token}
+                      session={creator}
                       application={applications.load.items.find((item) => item.campaign_id === campaign.campaign_id)}
                       onRecord={applications.record}
+                      reload={applications.reload}
                     />
                   )}
                 </CampaignCard>
