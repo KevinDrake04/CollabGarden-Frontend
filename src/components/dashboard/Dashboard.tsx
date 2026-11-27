@@ -111,6 +111,7 @@ export interface CampaignCardProps {
   actionLabel?: string;
   onAction?: () => void;
   actionDisabled?: boolean;
+  children?: ReactNode;
 }
 
 export function CampaignCard({
@@ -124,6 +125,7 @@ export function CampaignCard({
   actionLabel,
   onAction,
   actionDisabled = false,
+  children,
 }: CampaignCardProps) {
   const details = [location, budget, date].filter(Boolean);
   const showAction = Boolean(actionLabel && (onAction || actionDisabled));
@@ -151,6 +153,7 @@ export function CampaignCard({
           {actionLabel}
         </AppButton>
       )}
+      {children}
     </Card>
   );
 }
@@ -164,6 +167,7 @@ export interface OpportunityCardProps {
   actionLabel?: string;
   onAction?: () => void;
   actionDisabled?: boolean;
+  children?: ReactNode;
 }
 
 export function OpportunityCard({
@@ -175,6 +179,7 @@ export function OpportunityCard({
   actionLabel,
   onAction,
   actionDisabled = false,
+  children,
 }: OpportunityCardProps) {
   const details = [location, category].filter(Boolean);
   const showAction = Boolean(actionLabel && (onAction || actionDisabled));
@@ -197,6 +202,7 @@ export function OpportunityCard({
           {actionLabel}
         </AppButton>
       )}
+      {children}
     </Card>
   );
 }

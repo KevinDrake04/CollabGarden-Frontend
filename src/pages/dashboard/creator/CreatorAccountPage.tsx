@@ -11,9 +11,9 @@ import {
 } from "../../../api/creatorProfile";
 import { ApiError, countyNameForId, getCreator, loadCounties, type County } from "../../../api/directory";
 import { ProfileRequestError } from "../../../api/profileRequest";
-import { expireSession, type Session } from "../../auth/session";
+import { expireSession, isCurrentSession, type Session } from "../../auth/session";
 import { CreatorProfileForm } from "./CreatorProfileForm";
-import { isCurrentProfileSession, useProfileSave } from "../shared/useProfileSave";
+import { useProfileSave } from "../shared/useProfileSave";
 import {
   AccountCheck,
   AccountField,
@@ -26,7 +26,7 @@ import {
 const panelClass = "max-w-2xl rounded-2xl border border-[var(--cg-border)] bg-white p-6 shadow-sm";
 
 export default function CreatorAccountPage() {
-  const { session, accountState, accountError, retry } = useWorkspaceSession();
+  const { session, account, accountState, accountError, retry } = useWorkspaceSession();
   if (!session || session.role !== "creator") {
     return (
       <WorkspaceAccess
@@ -42,14 +42,18 @@ export default function CreatorAccountPage() {
     <div className="flex flex-col gap-6">
       <h1 className={titleClass}>Account</h1>
       <AccountCheck state={accountState} message={accountError} onRetry={retry} />
-      {accountState === "ready" && (
-        <CreatorAccount key={JSON.stringify([session.userId, session.accessToken])} session={session} />
+      {accountState === "ready" && account && (
+        <CreatorAccount
+          key={JSON.stringify([session.userId, session.accessToken])}
+          session={session}
+          accountName={account.displayName}
+        />
       )}
     </div>
   );
 }
 
-function CreatorAccount({ session }: { session: Session }) {
+function CreatorAccount({ session, accountName }: { session: Session; accountName: string | null }) {
   const token = session.accessToken;
   const [profile, setProfile] = useState<CreatorProfile | null>(null);
   const [counties, setCounties] = useState<County[]>([]);
@@ -77,13 +81,13 @@ function CreatorAccount({ session }: { session: Session }) {
       getOwnCreatorProfile(token, signal),
       loadCounties().catch(() => []),
     ]).then(([own, options]) => {
-      if (signal.aborted || !isCurrentProfileSession(session)) return;
+      if (signal.aborted || !isCurrentSession(session)) return;
       setProfile(own);
       setCounties(options);
     }).catch((error: unknown) => {
-      if (signal.aborted || !isCurrentProfileSession(session)) return;
+      if (signal.aborted || !isCurrentSession(session)) return;
       if (error instanceof ProfileRequestError && error.status === 401) {
-        expireSession();
+        expireSession(session);
         return;
       }
       setLoadError("Couldn't load your creator profile. Please try again.");
@@ -98,9 +102,11 @@ function CreatorAccount({ session }: { session: Session }) {
     const controller = new AbortController();
     const { signal } = controller;
     void getCreator(publicId, signal).then((listed) => {
-      if (!signal.aborted) setPubliclyListed(listed.creator_id === publicId);
+      if (!signal.aborted && isCurrentSession(session)) setPubliclyListed(listed.creator_id === publicId);
     }).catch((error: unknown) => {
-      if (!signal.aborted && error instanceof ApiError && error.status === 404) setPubliclyListed(false);
+      if (!signal.aborted && isCurrentSession(session) && error instanceof ApiError && error.status === 404) {
+        setPubliclyListed(false);
+      }
     });
     return () => controller.abort();
   }, [publicId]);
@@ -109,7 +115,7 @@ function CreatorAccount({ session }: { session: Session }) {
     if (profile) return save((signal) => saveCreatorProfile(token, profile, update, posts, photo, signal));
   }
 
-  const displayName = profile?.display_name ?? "";
+  const displayName = profile?.display_name || accountName;
   const county = profile ? countyNameForId(profile.county_id, counties) : "";
 
   return (

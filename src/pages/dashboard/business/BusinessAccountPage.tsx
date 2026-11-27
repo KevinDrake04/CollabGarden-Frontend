@@ -12,11 +12,11 @@ import {
 } from "../../../api/businessProfile";
 import { ApiError, getBusiness, loadCounties, type Business, type County } from "../../../api/directory";
 import { ProfileRequestError, profileImageUrl } from "../../../api/profileRequest";
-import { expireSession, type Session } from "../../auth/session";
+import { expireSession, isCurrentSession, type Session } from "../../auth/session";
 import { countyLabel } from "../shared/campaignLabels";
 import { BusinessSwitcher, useBusinessNames, useSelectedBusiness } from "../shared/selectedBusiness";
 import { BusinessProfileForm } from "./BusinessProfileForm";
-import { isCurrentProfileSession, useProfileSave } from "../shared/useProfileSave";
+import { useProfileSave } from "../shared/useProfileSave";
 import {
   AccountCheck,
   AccountField,
@@ -87,13 +87,13 @@ function BusinessAccount({ session }: { session: Session }) {
       }),
       loadCounties().catch(() => []),
     ]).then(([profile, options]) => {
-      if (signal.aborted || !isCurrentProfileSession(session)) return;
+      if (signal.aborted || !isCurrentSession(session)) return;
       setOwn(profile);
       setCounties(options);
     }).catch((error: unknown) => {
-      if (signal.aborted || !isCurrentProfileSession(session)) return;
+      if (signal.aborted || !isCurrentSession(session)) return;
       if (error instanceof ProfileRequestError && error.status === 401) {
-        expireSession();
+        expireSession(session);
         return;
       }
       setLoadError("Couldn't load your business profile. Please try again.");

@@ -1,8 +1,9 @@
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Card, Chip } from "@heroui/react";
 import { AppButton } from "../ui/Buttons";
 import { AppInput, AppSelect, AppTextarea, type SelectOption } from "../ui/Fields";
 import { AppNotice } from "../feedback/Feedback";
+import type { DeliverableWrite } from "../../api/collaborations";
 
 const cardClass = "rounded-2xl border border-[var(--cg-border)] bg-white p-5";
 
@@ -245,7 +246,7 @@ export function DeliverableCard({
   );
 }
 
-export type AttachmentDraft = {
+type AttachmentDraft = {
   key: string;
   type: "link" | "image";
   url: string;
@@ -258,12 +259,9 @@ export type DeliverableFormValues = {
   attachments: AttachmentDraft[];
 };
 
-export type DeliverableInput = {
-  campaignId: string;
-  title: string;
-  description: string;
-  attachments: { type: "link" | "image"; url: string }[];
-};
+export type DeliverableInput =
+  | { kind: "create"; campaignId: number; content: DeliverableWrite }
+  | { kind: "edit"; changes: Partial<DeliverableWrite> };
 
 const attachmentTypeOptions: SelectOption[] = [
   { value: "link", label: "Link" },
@@ -273,96 +271,106 @@ const attachmentTypeOptions: SelectOption[] = [
 type FormErrors = {
   campaignId?: string;
   title?: string;
+  description?: string;
   attachmentRows?: Record<string, string>;
 };
 
-function attachmentUrlError(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "Enter a URL.";
+function attachmentUrlError(url: string) {
+  if (!url) return "Enter a URL.";
+  if (Array.from(url).length > 500) return "Use a URL of 500 characters or fewer.";
+  if (!/^https?:\/\/\S+$/.test(url)) return "Enter an http or https URL.";
   try {
-    const url = new URL(trimmed);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return "Enter an http or https URL.";
-    }
+    new URL(url);
   } catch {
     return "Enter an http or https URL.";
   }
   return "";
 }
 
-function cleanInput(values: DeliverableFormValues): DeliverableInput {
+function normalizeContent(values: DeliverableFormValues): DeliverableWrite {
   return {
-    campaignId: values.campaignId,
     title: values.title.trim(),
-    description: values.description.trim(),
-    attachments: values.attachments.flatMap((attachment) => {
-      const url = attachment.url.trim();
-      if (attachmentUrlError(url)) return [];
-      return [{ type: attachment.type, url }];
-    }),
+    description: values.description.trim() || null,
+    attachments: values.attachments.map(({ type, url }) => ({ attachment_type: type, url: url.trim() })),
   };
 }
 
-function validate(values: DeliverableFormValues, campaigns?: SelectOption[]): FormErrors {
+function prepareInput(values: DeliverableFormValues, campaigns?: SelectOption[], original?: DeliverableFormValues) {
   const errors: FormErrors = {};
   if (campaigns && !campaigns.some((option) => option.value === values.campaignId)) {
     errors.campaignId = campaigns.length === 0 ? "No campaign is available." : "Choose a campaign.";
   }
-  if (!values.title.trim()) errors.title = "Enter a title.";
+  const content = normalizeContent(values);
+  const previous = original ? normalizeContent(original) : null;
+  const changes: Partial<DeliverableWrite> = {};
 
-  const attachmentRows: Record<string, string> = {};
-  for (const attachment of values.attachments) {
-    const message = attachmentUrlError(attachment.url);
-    if (message) attachmentRows[attachment.key] = message;
+  if (!previous || content.title !== previous.title) {
+    changes.title = content.title;
+    if (!content.title) errors.title = "Enter a title.";
+    else if (previous && Array.from(content.title).length > 200) {
+      errors.title = "Use a title of 200 characters or fewer.";
+    }
   }
-  if (Object.keys(attachmentRows).length > 0) errors.attachmentRows = attachmentRows;
-  return errors;
+  if (previous && content.description !== previous.description) {
+    changes.description = content.description;
+    if (Array.from(content.description ?? "").length > 5000) {
+      errors.description = "Use a description of 5,000 characters or fewer.";
+    }
+  }
+
+  // The API replaces the whole list when attachments are included in a PATCH.
+  const attachmentsChanged = !previous || content.attachments.length !== previous.attachments.length ||
+    content.attachments.some(({ attachment_type, url }, index) =>
+      attachment_type !== previous.attachments[index].attachment_type || url !== previous.attachments[index].url,
+    );
+  if (attachmentsChanged) {
+    changes.attachments = content.attachments;
+    const attachmentRows: Record<string, string> = {};
+    content.attachments.forEach(({ url }, index) => {
+      const message = attachmentUrlError(url);
+      if (message) attachmentRows[values.attachments[index].key] = message;
+    });
+    if (Object.keys(attachmentRows).length > 0) errors.attachmentRows = attachmentRows;
+  }
+
+  const input: DeliverableInput = previous
+    ? { kind: "edit", changes }
+    : { kind: "create", campaignId: Number(values.campaignId), content };
+  return { errors, input };
 }
 
 export function DeliverableForm({
   initialValues,
   campaigns,
-  onSaveDraft,
+  mode = "create",
+  onSave,
   onSubmit,
-  saveDisabled = false,
-  submitDisabled = false,
-  disabledReason = "",
   pending = null,
   error = "",
 }: {
   initialValues: DeliverableFormValues;
   campaigns?: SelectOption[];
-  onSaveDraft: (input: DeliverableInput) => void;
+  mode?: "create" | "edit" | "revise";
+  onSave: (input: DeliverableInput) => void;
   onSubmit: (input: DeliverableInput) => void;
-  saveDisabled?: boolean;
-  submitDisabled?: boolean;
-  disabledReason?: string;
-  pending?: "draft" | "submit" | null;
+  pending?: "save" | "submit" | null;
   error?: string;
 }) {
   const [values, setValues] = useState(initialValues);
   const [errors, setErrors] = useState<FormErrors>({});
   const [nextKey, setNextKey] = useState(initialValues.attachments.length + 1);
-  const actionLock = useRef(false);
 
   function update(next: DeliverableFormValues) {
     setValues(next);
     setErrors({});
   }
 
-  function run(action: "draft" | "submit") {
-    if (actionLock.current || pending) return;
-    if (action === "draft" && saveDisabled) return;
-    if (action === "submit" && submitDisabled) return;
-    const nextErrors = validate(values, campaigns);
+  function run(action: "save" | "submit") {
+    if (pending) return;
+    const { input, errors: nextErrors } = prepareInput(values, campaigns, mode === "create" ? undefined : initialValues);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    actionLock.current = true;
-    window.setTimeout(() => {
-      actionLock.current = false;
-    }, 0);
-    const input = cleanInput(values);
-    if (action === "draft") onSaveDraft(input);
+    if (action === "save") onSave(input);
     else onSubmit(input);
   }
 
@@ -392,7 +400,7 @@ export function DeliverableForm({
         value={values.title}
         onChange={(title) => update({ ...values, title })}
         placeholder="Spring tasting reel"
-        required
+        required={mode === "create"}
         error={errors.title}
       />
 
@@ -404,12 +412,13 @@ export function DeliverableForm({
         placeholder="What the business should review"
         rows={3}
         helper="Optional."
+        error={errors.description}
       />
 
       <div className="flex flex-col gap-3">
         <div>
           <h3 className="text-sm font-semibold text-[var(--cg-text)]">Attachments</h3>
-          <p className="text-sm">Add a link or image URL. File upload is not ready.</p>
+          <p className="text-sm">Add a link or image URL.</p>
         </div>
 
         {values.attachments.map((attachment, index) => (
@@ -474,20 +483,19 @@ export function DeliverableForm({
         </AppButton>
       </div>
 
-      {(saveDisabled || submitDisabled) && disabledReason && <p className="text-sm">{disabledReason}</p>}
       {error && <AppNotice tone="error" message={error} />}
 
       <div className="flex flex-wrap gap-3">
         <AppButton
           type="button"
           variant="secondary"
-          isDisabled={saveDisabled || pending !== null}
-          onPress={() => run("draft")}
+          isDisabled={pending !== null}
+          onPress={() => run("save")}
         >
-          {pending === "draft" ? "Saving draft..." : "Save draft"}
+          {pending === "save" ? "Saving..." : mode === "create" ? "Save draft" : "Save changes"}
         </AppButton>
-        <AppButton type="button" isDisabled={submitDisabled || pending !== null} onPress={() => run("submit")}>
-          {pending === "submit" ? "Submitting..." : "Submit"}
+        <AppButton type="button" isDisabled={pending !== null} onPress={() => run("submit")}>
+          {pending === "submit" ? "Submitting..." : mode === "revise" ? "Resubmit" : "Submit"}
         </AppButton>
       </div>
     </form>
@@ -496,28 +504,31 @@ export function DeliverableForm({
 
 export function DeliverableReview({
   deliverable,
+  children,
   comment,
   onCommentChange,
   onApprove,
   onRequestRevision,
   blockedReason = "",
+  disabled = false,
   pending = null,
-  error = "",
 }: {
   deliverable: DeliverableSummary;
+  children?: ReactNode;
   comment: string;
   onCommentChange: (comment: string) => void;
   onApprove: () => void;
   onRequestRevision: () => void;
   blockedReason?: string;
+  disabled?: boolean;
   pending?: "approve" | "revision" | null;
-  error?: string;
 }) {
   const commentMissing = comment.trim().length === 0;
-  const locked = Boolean(blockedReason) || pending !== null;
+  const locked = Boolean(blockedReason) || disabled || pending !== null;
 
   return (
     <DeliverableCard deliverable={deliverable}>
+      {children}
       <div className="flex flex-col gap-3 border-t border-[var(--cg-border)] pt-3">
         <AppTextarea
           label="Revision feedback"
@@ -530,7 +541,6 @@ export function DeliverableReview({
           helper="Required for a revision request. Approve can include this comment, and it can be left blank."
         />
         {blockedReason && <p className="text-sm">{blockedReason}</p>}
-        {error && <AppNotice tone="error" message={error} />}
         <div className="flex flex-wrap gap-3">
           <AppButton
             isDisabled={locked}
