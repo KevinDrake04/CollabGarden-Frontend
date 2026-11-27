@@ -37,7 +37,6 @@
 .nj-county-map .nj-county[aria-pressed="true"]:focus-visible {
   fill: var(--cg-primary);
   stroke: var(--cg-warning);
-  stroke-width: 3.5px;
 }
 
 @media (prefers-reduced-motion: reduce) {

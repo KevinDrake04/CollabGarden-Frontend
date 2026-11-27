@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+import { countyNameKey } from "../utils/countyNames";
+
 // Railway API data used by the directory and profile pages.
 export type DirectoryType = "business" | "creator";
 
@@ -115,16 +117,17 @@ async function getDirectory(
   counties: County[],
   signal: AbortSignal,
 ): Promise<DirectoryEntry[]> {
+  const selectedNames = new Set(selectedCounties.map(countyNameKey));
+  const selected = counties.filter((county) => selectedNames.has(countyNameKey(county.name)));
+
   if (type === "creator") {
     const creators = await get<Creator[]>("/api/v1/creators", signal);
-    const selectedIds = counties
-      .filter((county) => selectedCounties.includes(county.name))
-      .map((county) => county.county_id);
+    const selectedIds = new Set(selected.map((county) => county.county_id));
 
     return creators
       .filter((creator) => {
         if (selectedCounties.length === 0) return true;
-        return creator.county_id != null && selectedIds.includes(creator.county_id);
+        return creator.county_id != null && selectedIds.has(creator.county_id);
       })
       .map((creator) => ({
         id: `creator-${creator.creator_id}`,
@@ -137,9 +140,7 @@ async function getDirectory(
 
   // Ask for each selected county with county_id, then keep one card per business.
   // county_ids on the business lists every county it operates in.
-  const targets = selectedCounties.length === 0
-    ? [null]
-    : counties.filter((county) => selectedCounties.includes(county.name));
+  const targets = selectedCounties.length === 0 ? [null] : selected;
 
   const groups = await Promise.all(
     targets.map(async (county) => {

@@ -1,3 +1,5 @@
+import { countyNameKey } from "../../utils/countyNames";
+
 /**
  * New Jersey county boundaries for the interactive map.
  *
@@ -26,7 +28,7 @@
  * mapping library or service.
  */
 
-export type CountyPath = {
+type CountyPath = {
   name: string;
   /** Census GEOID (state FIPS 34 plus the county FIPS). Not a database id. */
   geoid: string;
@@ -144,8 +146,19 @@ export const NJ_COUNTY_PATHS: CountyPath[] = [
 ];
 
 export const NJ_COUNTY_NAMES = NJ_COUNTY_PATHS.map((county) => county.name);
+const countyByKey = new Map(NJ_COUNTY_NAMES.map((name) => [countyNameKey(name), name]));
 
-export function countyDiscoverPath(name: string) {
-  return `/discover?${new URLSearchParams({ county: name }).toString()}`;
+export function readCountyParams(params: URLSearchParams) {
+  const names = new Set<string>();
+  for (const value of params.getAll("county")) {
+    const name = countyByKey.get(countyNameKey(value));
+    if (name) names.add(name);
+  }
+  return [...names];
 }
 
+export function countyDiscoverPath(name: string, search = "") {
+  const params = new URLSearchParams(search);
+  params.set("county", name);
+  return `/discover?${params}`;
+}
