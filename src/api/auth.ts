@@ -1,24 +1,24 @@
 /// <reference types="vite/client" />
 
-// Login: POST /auth/login returns access_token and user { id, email, role }.
-// Signup: POST /auth/signup takes email, password, role, and business_name or display_name.
-// Its success body may be empty and does not start a session.
-// The OpenAPI document leaves the login and signup response schemas untyped.
-// GET /auth/me is also untyped in OpenAPI and now returns the signed-in account:
-// id, email, role, business_id, and business_ids.
-// Creators receive null business identifiers. role is "business", "creator", or "admin".
-// The browser copy of this session lives in src/pages/auth/session.ts.
+import type { SignupSocialLink } from "../utils/socialLinks";
 
 export type AccountRole = "business" | "creator" | "admin";
 
 export type Session = {
   accessToken: string;
+  refreshToken?: string;
   userId: string;
   email: string;
   role: AccountRole;
   businessId: number | null;
   businessIds: number[] | null;
 };
+
+// signed-in: signup returned a token and /auth/me confirmed the account.
+// created: the account exists, but no session could be opened from the response.
+type SignupResult =
+  | { status: "signed-in"; session: Session }
+  | { status: "created" };
 
 export class AuthError extends Error {
   readonly status: number;
@@ -34,6 +34,14 @@ function apiUrl() {
   const url = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
   if (!url) throw new AuthError(0, "Missing VITE_API_URL in .env.local");
   return url;
+}
+
+function postAuth(endpoint: "login" | "signup", body: object) {
+  return fetch(`${apiUrl()}/auth/${endpoint}`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 function errorMessage(status: number, body: unknown) {
@@ -162,64 +170,123 @@ export async function fetchAccount(token: string, signal?: AbortSignal) {
   return parseAccount(body);
 }
 
-export async function login(email: string, password: string): Promise<Session> {
-  const response = await fetch(`${apiUrl()}/auth/login`, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  const body = await readBody(response);
-  if (!response.ok) throw new AuthError(response.status, errorMessage(response.status, body));
-
+function authPayload(body: unknown) {
   const record = isRecord(body) ? body : null;
-  const token = record && typeof record.access_token === "string" ? record.access_token : "";
+  const accessToken = record && typeof record.access_token === "string" ? record.access_token : "";
+  const refreshToken = record && typeof record.refresh_token === "string" ? record.refresh_token : "";
   const user = record && isRecord(record.user) ? record.user : null;
   const userId = user && typeof user.id === "string" ? user.id : "";
-  const userEmail = user && typeof user.email === "string" ? user.email : email;
-  if (!token || !user || !userId) {
-    throw new AuthError(response.status, "The login response did not include an access token and account.");
-  }
+  const email = user && typeof user.email === "string" ? user.email : "";
+  return { accessToken, refreshToken, userId, email };
+}
 
-  const account = await fetchAccount(token);
-  if (account.id !== userId) {
+async function sessionFromTokens(input: {
+  accessToken: string;
+  refreshToken: string;
+  fallbackEmail: string;
+  expectedUserId: string;
+}): Promise<Session> {
+  const account = await fetchAccount(input.accessToken);
+  if (input.expectedUserId && account.id !== input.expectedUserId) {
     throw new AuthError(200, "The account response did not match the signed-in user.");
   }
 
-  return {
-    accessToken: token,
+  const session: Session = {
+    accessToken: input.accessToken,
     userId: account.id,
-    email: account.email || userEmail,
+    email: account.email || input.fallbackEmail,
     role: account.role,
     businessId: account.businessId,
     businessIds: account.businessIds,
   };
+  if (input.refreshToken) session.refreshToken = input.refreshToken;
+  return session;
 }
 
-export async function signup(input: {
+export async function login(email: string, password: string): Promise<Session> {
+  const response = await postAuth("login", { email, password });
+  const body = await readBody(response);
+  if (!response.ok) throw new AuthError(response.status, errorMessage(response.status, body));
+
+  const parsed = authPayload(body);
+  if (!parsed.accessToken || !parsed.userId) {
+    throw new AuthError(response.status, "The login response did not include an access token and account.");
+  }
+
+  return sessionFromTokens({
+    accessToken: parsed.accessToken,
+    refreshToken: parsed.refreshToken,
+    fallbackEmail: parsed.email || email,
+    expectedUserId: parsed.userId,
+  });
+}
+
+type SignupInput = {
+  email: string;
+  password: string;
+  name: string;
+  countyId?: number | null;
+} & (
+  | { role: "business" }
+  | { role: "creator"; socialLinks: SignupSocialLink[] }
+);
+
+type SignupBody = {
   email: string;
   password: string;
   role: "business" | "creator";
-  name: string;
-}) {
-  const payload: {
-    email: string;
-    password: string;
-    role: "business" | "creator";
-    business_name?: string;
-    display_name?: string;
-  } = {
+  business_name?: string;
+  display_name?: string;
+  county_id?: number;
+  social_links?: SignupSocialLink[];
+};
+
+export function signupRequestBody(input: SignupInput): SignupBody {
+  const body: SignupBody = {
     email: input.email,
     password: input.password,
     role: input.role,
   };
-  if (input.role === "business") payload.business_name = input.name;
-  else payload.display_name = input.name;
 
-  const response = await fetch(`${apiUrl()}/auth/signup`, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const body = await readBody(response);
+  if (input.role === "business") {
+    body.business_name = input.name;
+  } else {
+    body.display_name = input.name;
+    body.social_links = input.socialLinks;
+  }
+
+  if (typeof input.countyId === "number" && Number.isInteger(input.countyId) && input.countyId > 0) {
+    body.county_id = input.countyId;
+  }
+
+  return body;
+}
+
+export async function signup(input: SignupInput): Promise<SignupResult> {
+  const response = await postAuth("signup", signupRequestBody(input));
+
+  // A successful response can mean the account exists even if we cannot open a session.
+  let body: unknown;
+  try {
+    body = await readBody(response);
+  } catch (error) {
+    if (response.ok) return { status: "created" };
+    throw error;
+  }
   if (!response.ok) throw new AuthError(response.status, errorMessage(response.status, body));
+
+  const parsed = authPayload(body);
+  if (!parsed.accessToken) return { status: "created" };
+
+  try {
+    const session = await sessionFromTokens({
+      accessToken: parsed.accessToken,
+      refreshToken: parsed.refreshToken,
+      fallbackEmail: parsed.email || input.email,
+      expectedUserId: parsed.userId,
+    });
+    return { status: "signed-in", session };
+  } catch {
+    return { status: "created" };
+  }
 }

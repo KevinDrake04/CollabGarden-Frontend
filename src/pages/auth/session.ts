@@ -34,7 +34,7 @@ export function readSession(): Session | null {
     const parsed = JSON.parse(raw) as Partial<Session>;
     const role = roleOf(parsed.role);
     if (!parsed.accessToken || !parsed.userId || !parsed.email || !role) return null;
-    return {
+    const session: Session = {
       accessToken: parsed.accessToken,
       userId: parsed.userId,
       email: parsed.email,
@@ -42,6 +42,10 @@ export function readSession(): Session | null {
       businessId: storedBusinessId(parsed),
       businessIds: storedBusinessIds(parsed),
     };
+    if (typeof parsed.refreshToken === "string" && parsed.refreshToken) {
+      session.refreshToken = parsed.refreshToken;
+    }
+    return session;
   } catch {
     return null;
   }
@@ -97,7 +101,14 @@ export function dashboardPath(role: AccountRole) {
 }
 
 function allowedPath(pathname: string, role: AccountRole) {
-  if (pathname === "/" || pathname === "/discover" || pathname === "/campaigns" || pathname === "/signup") {
+  if (
+    pathname === "/"
+    || pathname === "/discover"
+    || pathname === "/campaigns"
+    || pathname === "/signup"
+    || pathname === "/terms"
+    || pathname === "/privacy"
+  ) {
     return true;
   }
   if (/^\/businesses\/\d+$/.test(pathname) || /^\/creators\/\d+$/.test(pathname)) return true;
@@ -179,6 +190,7 @@ export function useLiveSession() {
 
 function sameSession(left: Session, right: Session) {
   return left.accessToken === right.accessToken
+    && left.refreshToken === right.refreshToken
     && left.userId === right.userId
     && left.email === right.email
     && left.role === right.role
@@ -194,19 +206,21 @@ export async function verifySession(signal?: AbortSignal) {
 
   try {
     const account = await fetchAccount(current.accessToken, signal);
-    if (signal?.aborted || !isCurrentSession(current)) return null;
+    const stored = readSession();
+    if (signal?.aborted || !stored || !sameSessionIdentity(current, stored)) return null;
     if (account.id !== current.userId) {
       throw new AuthError(200, "The account response did not match the signed-in user.");
     }
     const next: Session = {
       accessToken: current.accessToken,
       userId: account.id,
-      email: account.email || current.email,
+      email: account.email || stored.email,
       role: account.role,
       businessId: account.businessId,
       businessIds: account.businessIds,
     };
-    if (!sameSession(current, next)) writeSession(next);
+    if (stored.refreshToken) next.refreshToken = stored.refreshToken;
+    if (!sameSession(stored, next)) writeSession(next);
     return { session: next, account };
   } catch (error) {
     if (signal?.aborted) throw error;

@@ -34,30 +34,6 @@ const steps = [
   },
 ];
 
-const footerGroups = [
-  {
-    title: "Explore",
-    links: [
-      { label: "Discover", to: "/discover" },
-      { label: "Creators", to: "/discover?type=creator" },
-    ],
-  },
-  {
-    title: "Counties",
-    links: [
-      { label: "Essex", to: "/discover?type=creator&county=Essex" },
-      { label: "Hudson", to: "/discover?type=creator&county=Hudson" },
-    ],
-  },
-  {
-    title: "Account",
-    links: [
-      { label: "Login", to: "/login" },
-      { label: "Sign up", to: "/signup" },
-    ],
-  },
-];
-
 function ActionLink({
   to,
   variant = "primary",
@@ -303,45 +279,6 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
-
-      <footer className="bg-white">
-        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 md:grid-cols-[1.4fr_1fr_1fr_1fr] md:px-8">
-          <div>
-            <p className="font-semibold text-[var(--cg-primary-dark)]">CollabGarden</p>
-            <p className="mt-2 max-w-xs text-sm text-[var(--cg-muted)]">
-              A directory for local New Jersey businesses and content creators.
-            </p>
-          </div>
-          {footerGroups.map((group) => (
-            <div key={group.title}>
-              <p className="text-sm font-semibold text-[var(--cg-text)]">{group.title}</p>
-              <ul className="mt-3 space-y-2">
-                {group.links.map((item) => (
-                  <li key={item.label}>
-                    <Link
-                      to={item.to}
-                      className="text-sm text-[var(--cg-muted)] no-underline hover:text-[var(--cg-primary-dark)]"
-                    >
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-t border-[var(--cg-border)] px-4 py-4 md:px-8">
-          <p className="text-xs text-[var(--cg-muted)]">© 2026 CollabGarden</p>
-          <div className="flex gap-4">
-            <Link to="/" className="text-xs text-[var(--cg-muted)] no-underline">
-              Home
-            </Link>
-            <Link to="/discover" className="text-xs text-[var(--cg-muted)] no-underline">
-              Discover
-            </Link>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

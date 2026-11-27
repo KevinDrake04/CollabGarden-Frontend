@@ -64,7 +64,7 @@ export function useWorkspaceSession() {
   const accountError = verified && "error" in verified ? verified.error : "";
   const accountState = accountError ? "error" : session && !confirmed ? "pending" : "ready";
   return {
-    session: confirmed?.session ?? session,
+    session,
     account: confirmed?.account ?? null,
     accountState,
     accountError,
