@@ -1,0 +1,67 @@
+.creator-social-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--cg-border);
+  border-radius: 0.75rem;
+  background: var(--cg-surface);
+  color: var(--cg-primary-dark);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.creator-social-choice:hover:not(:disabled),
+.creator-social-choice[aria-pressed="true"] {
+  background: var(--cg-background);
+}
+
+.creator-social-choice[aria-pressed="true"] {
+  border-color: var(--cg-primary);
+}
+
+.creator-social-choice:focus-visible,
+.creator-social-remove:focus-visible {
+  outline: 2px solid var(--cg-primary-dark);
+  outline-offset: 2px;
+}
+
+.creator-social-choice:disabled,
+.creator-social-remove:disabled {
+  color: var(--cg-muted);
+  cursor: not-allowed;
+}
+
+.creator-social-choice:disabled :is(img, svg) {
+  opacity: 0.4;
+}
+
+.creator-social-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: min(34rem, calc(100dvh - 2rem));
+  overflow: hidden;
+}
+
+.creator-social-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.creator-social-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  color: var(--cg-error);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}

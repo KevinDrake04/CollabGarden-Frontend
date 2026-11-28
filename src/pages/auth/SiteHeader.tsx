@@ -89,16 +89,19 @@ function workspaceLinks(session: Session, search: string): NavItem[] {
 
 export function SiteHeader() {
   const session = useLiveSession();
-  const { search } = useLocation();
+  const { pathname, search } = useLocation();
   const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const pageVerifiesAccount = pathname.startsWith("/dashboard/")
+    || pathname === "/campaigns/new" || /^\/campaigns\/\d+\/edit$/.test(pathname);
 
   useEffect(() => {
+    if (pageVerifiesAccount) return;
     const controller = new AbortController();
     refreshSession(controller.signal).catch(() => {
       // A 401 clears the stored session and marks it expired. Other failures leave it in place.
     });
     return () => controller.abort();
-  }, []);
+  }, [pageVerifiesAccount]);
 
   return (
     <>

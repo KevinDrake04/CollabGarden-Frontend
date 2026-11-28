@@ -34,6 +34,11 @@ type SamplePost = {
   caption?: string | null;
 };
 
+type SocialLink = {
+  platform: string;
+  url: string;
+};
+
 export type Creator = {
   creator_id: number;
   display_name: string;
@@ -43,6 +48,8 @@ export type Creator = {
   follower_range: string | null;
   county_id: number | null;
   sample_posts: SamplePost[] | null;
+  // Missing or empty for creators saved before social links existed.
+  social_links?: SocialLink[] | null;
 };
 
 export class ApiError extends Error {

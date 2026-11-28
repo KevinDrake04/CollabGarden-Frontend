@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
-import { type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { AppButton, AppNotice } from "../../../components";
-import { AuthError } from "../../../api/auth";
+import type { AccountProfile } from "../../../api/auth";
 import {
   dashboardPath,
-  expireSession,
+  isCurrentSession,
   readSession,
   readSessionExpired,
-  refreshSession,
+  sameSessionIdentity,
   useExpiredSessionRedirect,
-  watchSession,
+  useLiveSession,
+  verifySession,
   type Session,
 } from "../../auth/session";
 
@@ -21,10 +21,6 @@ export const linkClass =
 export const textLinkClass =
   "text-sm font-semibold text-[var(--cg-primary-dark)] no-underline";
 
-function isAbort(error: unknown) {
-  return error instanceof Error && error.name === "AbortError";
-}
-
 export function signedInAs(role: Session["role"]) {
   if (role === "admin") return "an administrator";
   return `a ${role}`;
@@ -32,51 +28,51 @@ export function signedInAs(role: Session["role"]) {
 
 export function useWorkspaceSession() {
   useExpiredSessionRedirect();
-  const [session, setSession] = useState<Session | null>(() => readSession());
-  const [accountState, setAccountState] = useState<"pending" | "ready" | "error">(() =>
-    readSession() ? "pending" : "ready",
-  );
-  const [accountError, setAccountError] = useState("");
+  const session = useLiveSession();
+  const [check, setCheck] = useState<
+    | { session: Session; account: AccountProfile }
+    | { session: Session; error: string }
+    | null
+  >(null);
   const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => watchSession(() => setSession(readSession())), []);
+  const userId = session?.userId;
+  const accessToken = session?.accessToken;
+  const role = session?.role;
 
   useEffect(() => {
-    const controller = new AbortController();
     const stored = readSession();
-    if (!stored) {
-      setSession(null);
-      setAccountState("ready");
-      setAccountError("");
-      return () => controller.abort();
-    }
+    setCheck(null);
+    if (!stored) return;
 
-    setAccountState("pending");
-    setAccountError("");
-    refreshSession(controller.signal)
+    const controller = new AbortController();
+    verifySession(controller.signal)
       .then((next) => {
-        if (controller.signal.aborted || !next) return;
-        setSession(next);
-        setAccountState("ready");
+        if (!controller.signal.aborted && next && isCurrentSession(next.session)) setCheck(next);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbort(error)) return;
-        if (error instanceof AuthError && error.status === 401) {
-          expireSession();
-          return;
-        }
-        setAccountState("error");
-        setAccountError(error instanceof Error && error.message ? error.message : "Couldn't confirm this account.");
+        if (controller.signal.aborted || !isCurrentSession(stored)) return;
+        setCheck({
+          session: stored,
+          error: error instanceof Error && error.message ? error.message : "Couldn't confirm this account.",
+        });
       });
     return () => controller.abort();
-  }, [attempt]);
+  }, [userId, accessToken, role, attempt]);
 
+  const verified = check && sameSessionIdentity(check.session, session) ? check : null;
+  const confirmed = verified && "account" in verified ? verified : null;
+  const accountError = verified && "error" in verified ? verified.error : "";
+  const accountState = accountError ? "error" : session && !confirmed ? "pending" : "ready";
   return {
     session,
+    account: confirmed?.account ?? null,
     accountState,
     accountError,
-    retry: () => setAttempt((value) => value + 1),
-  };
+    retry: () => {
+      setCheck(null);
+      setAttempt((value) => value + 1);
+    },
+  } as const;
 }
 
 export function AccountCheck({

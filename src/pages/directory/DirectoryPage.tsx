@@ -258,7 +258,7 @@ export default function DirectoryPage() {
   );
 
   return (
-    <div className="-m-12 min-h-[calc(100dvh-4.5rem)] bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-my-8">
+    <div className="-mx-12 -mt-12 flex-1 bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-mt-8">
     <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-10 text-[var(--cg-text)] md:px-8 md:py-14">
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
       <div className="max-w-2xl lg:col-start-1 lg:row-start-1">
