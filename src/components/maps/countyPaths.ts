@@ -157,8 +157,8 @@ export function readCountyParams(params: URLSearchParams) {
   return [...names];
 }
 
-export function countyDiscoverPath(name: string, search = "") {
+export function countyDiscoverPath(name: string, search = "", hash = "") {
   const params = new URLSearchParams(search);
   params.set("county", name);
-  return `/discover?${params}`;
+  return `/discover?${params}${hash}`;
 }

@@ -209,7 +209,7 @@ export default function LandingPage() {
                 Find people in your county
               </h2>
               <p className="mt-3 max-w-xl text-sm text-[var(--cg-muted)] md:text-base">
-                Choose a county on the map to open its directory listings.
+                Choose a county on the map to open the directory there. Every New Jersey county is included.
               </p>
               <div className="mt-6">
                 <ActionLink to="/discover">Explore all counties</ActionLink>
@@ -218,7 +218,7 @@ export default function LandingPage() {
             <div className="mx-auto w-full max-w-[340px]">
               <NJCountyMap
                 selected={[]}
-                onSelect={(name) => navigate(countyDiscoverPath(name))}
+                onSelect={(name) => navigate(countyDiscoverPath(name), { state: { focusDirectoryHeading: true } })}
               />
             </div>
           </div>

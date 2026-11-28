@@ -9,13 +9,15 @@ type CountiesMenuProps = {
 };
 
 export function CountiesMenu({ variant = "dropdown", onNavigate }: CountiesMenuProps) {
-  const { pathname, search } = useLocation();
+  const { pathname, search, hash } = useLocation();
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const desktop = variant === "dropdown";
-  const discoverSearch = matchPath("/discover", pathname) ? search : "";
+  const onDiscover = Boolean(matchPath("/discover", pathname));
+  const discoverSearch = onDiscover ? search : "";
+  const discoverHash = onDiscover ? hash : "";
   const selected = open ? readCountyParams(new URLSearchParams(discoverSearch)) : [];
 
   useEffect(() => {
@@ -79,9 +81,11 @@ export function CountiesMenu({ variant = "dropdown", onNavigate }: CountiesMenuP
             return (
               <Link
                 key={name}
-                to={countyDiscoverPath(name, discoverSearch)}
+                to={countyDiscoverPath(name, discoverSearch, discoverHash)}
+                state={{ focusDirectoryHeading: true }}
                 aria-current={current ? "page" : undefined}
-                onClick={() => {
+                onClick={(event) => {
+                  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                   setOpen(false);
                   onNavigate?.();
                 }}
