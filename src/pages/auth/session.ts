@@ -64,10 +64,19 @@ export function clearSession() {
 }
 
 // A rejected token is removed and remembered so login can explain it.
-export function expireSession() {
+export function expireSession(session?: Session) {
+  if (session && !isCurrentSession(session)) return;
   sessionStorage.removeItem(storageKey);
   sessionStorage.setItem(expiredKey, "1");
   notify();
+}
+
+export function sameSessionIdentity(left: Session | null, right: Session | null) {
+  return left?.userId === right?.userId && left?.accessToken === right?.accessToken && left?.role === right?.role;
+}
+
+export function isCurrentSession(session: Session) {
+  return sameSessionIdentity(session, readSession());
 }
 
 export function readSessionExpired() {
@@ -168,8 +177,12 @@ export function useLiveSession() {
   const [session, setSession] = useState<Session | null>(() => readSession());
 
   useEffect(() => {
-    setSession(readSession());
-    return watchSession(() => setSession(readSession()));
+    function syncSession() {
+      const next = readSession();
+      setSession((current) => current && next && sameSession(current, next) ? current : next);
+    }
+    syncSession();
+    return watchSession(syncSession);
   }, [pathname]);
 
   return session;
@@ -187,29 +200,39 @@ function sameSession(left: Session, right: Session) {
 
 // Reload role and business membership from /auth/me.
 // A 401 clears the session and marks it expired. Other failures leave it in place.
-export async function refreshSession(signal?: AbortSignal): Promise<Session | null> {
+export async function verifySession(signal?: AbortSignal) {
   const current = readSession();
   if (!current) return null;
 
   try {
     const account = await fetchAccount(current.accessToken, signal);
+    const stored = readSession();
+    if (signal?.aborted || !stored || !sameSessionIdentity(current, stored)) return null;
+    if (account.id !== current.userId) {
+      throw new AuthError(200, "The account response did not match the signed-in user.");
+    }
     const next: Session = {
       accessToken: current.accessToken,
       userId: account.id,
-      email: account.email || current.email,
+      email: account.email || stored.email,
       role: account.role,
       businessId: account.businessId,
       businessIds: account.businessIds,
     };
-    if (current.refreshToken) next.refreshToken = current.refreshToken;
-    if (!sameSession(current, next)) writeSession(next);
-    return next;
+    if (stored.refreshToken) next.refreshToken = stored.refreshToken;
+    if (!sameSession(stored, next)) writeSession(next);
+    return { session: next, account };
   } catch (error) {
     if (signal?.aborted) throw error;
+    if (!isCurrentSession(current)) return null;
     if (error instanceof AuthError && error.status === 401) {
-      expireSession();
+      expireSession(current);
       return null;
     }
     throw error;
   }
+}
+
+export async function refreshSession(signal?: AbortSignal): Promise<Session | null> {
+  return (await verifySession(signal))?.session ?? null;
 }

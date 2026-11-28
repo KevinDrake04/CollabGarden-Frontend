@@ -725,7 +725,7 @@ export default function ComponentGallery() {
               ],
             }}
             campaigns={[{ value: "sample-campaign", label: sampleCampaign }]}
-            onSaveDraft={() => setNotice("Sample only. Save draft was not sent to the API.")}
+            onSave={() => setNotice("Sample only. Save draft was not sent to the API.")}
             onSubmit={() => setNotice("Sample only. Submit was not sent to the API.")}
           />
         </div>

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { ChevronDown, Search } from "lucide-react";
+import { countyNameKey } from "../../utils/countyNames";
 
 type CountyFilterProps = {
   options: string[];
@@ -18,9 +19,8 @@ export default function CountyFilter({ options, selected, onChange }: CountyFilt
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [search, setSearch] = useState("");
 
-  const matches = options.filter((county) =>
-    county.toLowerCase().includes(search.trim().toLowerCase()),
-  );
+  const query = countyNameKey(search);
+  const matches = options.filter((county) => countyNameKey(county).includes(query));
 
   const label = selected.length === 0
     ? "All counties"
@@ -69,7 +69,7 @@ export default function CountyFilter({ options, selected, onChange }: CountyFilt
           </div>
 
           <div className="max-h-64 overflow-y-auto" aria-label="Select counties">
-            {!search.trim() && (
+            {!query && (
               <label className={optionStyle} data-selected={selected.length === 0}>
                 All counties
                 <input

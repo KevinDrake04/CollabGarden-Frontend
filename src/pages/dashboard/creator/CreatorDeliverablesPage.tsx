@@ -19,20 +19,48 @@ import {
 import {
   collaborationErrorMessage,
   createDeliverable,
+  getDeliverable,
+  isUncertainDeliverableWrite,
+  loadCampaignDeliverables,
   submitDeliverable,
+  updateDeliverable,
   upsertDeliverable,
   type CollaborationWorkspace,
   type Deliverable,
+  type DeliverableWrite,
 } from "../../../api/collaborations";
-import { dashboardPath } from "../../auth/session";
+import { dashboardPath, isCurrentSession } from "../../auth/session";
+import { DeliverableFeedback } from "../shared/DeliverableFeedback";
 import { clearSessionIfUnauthorized, useRoleWorkspace } from "../shared/useRoleWorkspace";
 import { linkClass, signedInAs, textLinkClass, titleClass } from "../shared/workspaceSession";
 
-type Feedback = { tone: "success" | "error"; message: string };
-type Pending = { action: "draft" | "submit"; id?: number };
+type Feedback = { tone: "success" | "error" | "info"; message: string };
+type Pending = { action: "save" | "submit"; id?: number } | { action: "check"; id: number };
+type Editor = { kind: "new" } | { kind: "edit"; deliverable: Deliverable };
+type PendingCreate = { requestId: string; previousIds: number[]; content: DeliverableWrite };
 
+// A POST can still be in flight after leaving and reopening the workspace in this tab.
+const activeCreates = new Set<string>();
 const pageClass = "flex w-full flex-col gap-6 text-[var(--cg-text)]";
 const headingClass = "text-xl font-semibold text-[var(--cg-primary-dark)]";
+
+function readPendingCreates(key: string): Record<number, PendingCreate> {
+  try {
+    return JSON.parse(sessionStorage.getItem(key) ?? "{}") ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function matchesDraft(deliverable: Deliverable, content: DeliverableWrite) {
+  return deliverable.title === content.title &&
+    (deliverable.description || null) === content.description &&
+    deliverable.attachments.length === content.attachments.length &&
+    deliverable.attachments.every((attachment, index) => {
+      const original = content.attachments[index];
+      return attachment.attachment_type === original.attachment_type && attachment.url === original.url;
+    });
+}
 
 function LoadingBlock({ label }: { label: string }) {
   return (
@@ -46,7 +74,7 @@ function LoadingBlock({ label }: { label: string }) {
 
 export default function CreatorDeliverablesPage() {
   const returnPath = "/dashboard/creator/deliverables";
-  const { view, workspace, reload, updateAccess } = useRoleWorkspace("creator");
+  const { view, reload, updateAccess, account } = useRoleWorkspace("creator");
 
   return (
     <div className={pageClass}>
@@ -103,8 +131,14 @@ export default function CreatorDeliverablesPage() {
         </div>
       )}
 
-      {view.kind === "ready" && workspace && (
-        <CreatorWorkspace workspace={workspace} onAccess={updateAccess} reload={reload} />
+      {view.kind === "ready" && (
+        <CreatorWorkspace
+          key={`${view.workspace.session.userId}:${view.workspace.session.accessToken}`}
+          workspace={view.workspace}
+          creatorId={account?.creatorId ?? null}
+          onAccess={updateAccess}
+          reload={reload}
+        />
       )}
     </div>
   );
@@ -112,10 +146,12 @@ export default function CreatorDeliverablesPage() {
 
 function CreatorWorkspace({
   workspace,
+  creatorId,
   onAccess,
   reload,
 }: {
   workspace: CollaborationWorkspace;
+  creatorId: number | null;
   onAccess: (
     update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],
   ) => void;
@@ -123,16 +159,26 @@ function CreatorWorkspace({
 }) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [formError, setFormError] = useState("");
-  const [open, setOpen] = useState(false);
-  const [formKey, setFormKey] = useState(0);
+  const [editor, setEditor] = useState<Editor | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const busy = useRef(false);
+  const { session } = workspace;
+  const createKey = `collabgarden.pendingDeliverables.${session.userId}`;
+  const [pendingCreates, setPendingCreates] = useState(() => readPendingCreates(createKey));
+  const [retryableCreates, setRetryableCreates] = useState<Partial<Record<number, string>>>({});
   const available = workspace.access.filter((entry) => !entry.error);
   const denied = workspace.access.filter((entry) => entry.error);
   const addReason = available.length === 0
     ? "Add a deliverable once a campaign is available."
     : "";
-  const formPending = pending && pending.id == null ? pending.action : null;
+  const formPending = pending?.action !== "check" && pending?.id == null ? pending?.action ?? null : null;
+  const editing = editor?.kind === "edit" ? editor.deliverable : null;
+  const editorTitle = editing ? "Edit deliverable" : "Add deliverable";
+
+  function openEditor(next: Editor) {
+    setFormError("");
+    setEditor(next);
+  }
 
   function showFeedback(next: Feedback) {
     setFeedback(next);
@@ -145,59 +191,100 @@ function CreatorWorkspace({
     onAccess((access) => upsertDeliverable(access, deliverable));
   }
 
-  async function save(input: DeliverableInput, action: "draft" | "submit") {
-    if (busy.current) return;
-    const campaignId = Number(input.campaignId);
-    if (!Number.isInteger(campaignId)) {
-      setFormError("Choose a campaign.");
+  function rememberCreate(campaignId: number, draft: PendingCreate | null, replacingId?: string) {
+    // A response can arrive after this page has been reopened and another save has started.
+    const next = readPendingCreates(createKey);
+    if (next[campaignId]?.requestId !== replacingId) {
+      setPendingCreates(next);
+      return false;
+    }
+    if (draft) next[campaignId] = draft;
+    else delete next[campaignId];
+    sessionStorage.setItem(createKey, JSON.stringify(next));
+    setPendingCreates(next);
+    return true;
+  }
+
+  async function saveDraft(campaignId: number, draft: Omit<PendingCreate, "requestId">, retryOf?: string) {
+    // Keep the lock across reloads in case the server saves before the connection drops.
+    const attempt = { ...draft, requestId: crypto.randomUUID() };
+    if (!rememberCreate(campaignId, attempt, retryOf)) return null;
+    activeCreates.add(attempt.requestId);
+    try {
+      const saved = await createDeliverable(campaignId, attempt.content, session.accessToken);
+      if (!isCurrentSession(session) || !rememberCreate(campaignId, null, attempt.requestId)) return null;
+      return saved;
+    } catch (error) {
+      if (!isCurrentSession(session)) return null;
+      if (isUncertainDeliverableWrite(error)) {
+        setEditor(null);
+        showFeedback({ tone: "error", message: "Couldn't confirm the draft. Check the campaign before creating it again." });
+        return null;
+      }
+      // A rejected retry leaves the outcome of the original save uncertain.
+      if (!retryOf) rememberCreate(campaignId, null, attempt.requestId);
+      throw error;
+    } finally {
+      activeCreates.delete(attempt.requestId);
+    }
+  }
+
+  async function save(input: DeliverableInput, action: "save" | "submit") {
+    if (busy.current || !editor || !isCurrentSession(session)) return;
+    const campaign = input.kind === "create"
+      ? available.find(({ campaign }) => campaign.campaign_id === input.campaignId)
+      : null;
+    if (input.kind === "create" && (!campaign || readPendingCreates(createKey)[input.campaignId])) {
+      setFormError(campaign ? "Check the previous draft before creating another for this campaign." : "Choose an available campaign.");
       return;
     }
+    if (input.kind === "edit" && (!editing || draftSubmitBlockReason(editing.status))) return;
 
     busy.current = true;
     setPending({ action });
     setFormError("");
     setFeedback(null);
     try {
-      const created = await createDeliverable(
-        campaignId,
-        {
-          title: input.title,
-          description: input.description || null,
-          attachments: input.attachments.map((attachment) => ({
-            attachment_type: attachment.type,
-            url: attachment.url,
-          })),
-        },
-        workspace.session.accessToken,
-      );
-      place(created);
-      if (action === "draft") {
-        setOpen(false);
-        showFeedback({
-          tone: "success",
-          message: `Draft saved for "${created.title}". Status is ${deliverableStatusLabel(created.status)}.`,
+      let saved: Deliverable | null = null;
+      if (input.kind === "create" && campaign) {
+        saved = await saveDraft(input.campaignId, {
+          previousIds: campaign.deliverables.map((item) => item.deliverable_id),
+          content: input.content,
         });
-        return;
+        if (!saved) return;
+      } else if (input.kind === "edit" && editing && Object.keys(input.changes).length > 0) {
+        saved = await updateDeliverable(editing.deliverable_id, input.changes, session.accessToken);
       }
 
-      try {
-        const submitted = await submitDeliverable(created.deliverable_id, workspace.session.accessToken);
-        place(submitted);
-        setOpen(false);
+      if (!isCurrentSession(session)) return;
+      if (saved) place(saved);
+
+      const target = saved ?? editing;
+      if (action === "submit" && target) {
+        try {
+          await submit(target);
+        } catch (error) {
+          if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
+          if (!saved) {
+            setFormError(collaborationErrorMessage(error));
+            return;
+          }
+          showFeedback({
+            tone: "error",
+            message: `Saved "${saved.title}". Submission failed. ${collaborationErrorMessage(error)}`,
+          });
+        }
+      } else if (saved) {
         showFeedback({
           tone: "success",
-          message: `Submit finished for "${submitted.title}". Status is ${deliverableStatusLabel(submitted.status)}.`,
+          message: `${editing ? "Changes saved" : "Draft saved"} for "${saved.title}". Status is ${deliverableStatusLabel(saved.status)}.`,
         });
-      } catch (error) {
-        if (clearSessionIfUnauthorized(error)) return;
-        setOpen(false);
-        showFeedback({
-          tone: "error",
-          message: `Draft saved for "${created.title}" with status ${deliverableStatusLabel(created.status)}. Submit failed: ${collaborationErrorMessage(error)}`,
-        });
+      } else {
+        showFeedback({ tone: "success", message: "No changes to save." });
       }
+      setEditor(null);
     } catch (error) {
-      if (clearSessionIfUnauthorized(error)) return;
+      if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
       setFormError(collaborationErrorMessage(error));
     } finally {
       busy.current = false;
@@ -205,20 +292,86 @@ function CreatorWorkspace({
     }
   }
 
+  async function checkDraft(campaignId: number, retry = false) {
+    const entry = available.find(({ campaign }) => campaign.campaign_id === campaignId);
+    if (!entry || busy.current || !isCurrentSession(session)) return;
+    const stored = readPendingCreates(createKey);
+    const draft = stored[campaignId];
+    if (!draft) {
+      setPendingCreates(stored);
+      return;
+    }
+    if (retry && retryableCreates[campaignId] !== draft.requestId) return;
+    busy.current = true;
+    setPending({ action: "check", id: campaignId });
+    setFeedback(null);
+    setRetryableCreates((current) => ({ ...current, [campaignId]: undefined }));
+    try {
+      const [fresh] = await loadCampaignDeliverables([entry.campaign], session);
+      if (!isCurrentSession(session)) return;
+      const current = readPendingCreates(createKey);
+      if (current[campaignId]?.requestId !== draft.requestId) {
+        setPendingCreates(current);
+        return;
+      }
+      if (!fresh || fresh.error) throw new Error(fresh?.error ?? "Could not read this campaign's deliverables.");
+      onAccess((access) => access.map((item) => item.campaign.campaign_id === campaignId ? fresh : item));
+      const matches = fresh.deliverables.filter((item) =>
+        item.campaign_id === campaignId && (creatorId == null || item.creator_id === creatorId) &&
+        !draft.previousIds.includes(item.deliverable_id) && matchesDraft(item, draft.content),
+      );
+      if (matches.length === 1) {
+        rememberCreate(campaignId, null, draft.requestId);
+        showFeedback({ tone: "success", message: `Found "${matches[0].title}" in this campaign. Use the existing deliverable below.` });
+      } else if (matches.length > 1) {
+        showFeedback({ tone: "error", message: "Multiple matching drafts were found. Check the saved drafts below before trying again." });
+      } else if (activeCreates.has(draft.requestId)) {
+        showFeedback({ tone: "info", message: "The previous save is still in progress. Check again in a moment." });
+      } else if (retry) {
+        const saved = await saveDraft(campaignId, draft, draft.requestId);
+        if (!saved || !isCurrentSession(session)) return;
+        place(saved);
+        showFeedback({ tone: "success", message: `Draft saved for "${saved.title}". Status is ${deliverableStatusLabel(saved.status)}.` });
+      } else {
+        setRetryableCreates((current) => ({ ...current, [campaignId]: draft.requestId }));
+        showFeedback({ tone: "info", message: "No matching draft was found. Retry will check again before saving the same details. The original save could still finish." });
+      }
+    } catch (error) {
+      if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
+      showFeedback({ tone: "error", message: collaborationErrorMessage(error) });
+    } finally {
+      busy.current = false;
+      setPending(null);
+    }
+  }
+
+  async function submit(deliverable: Deliverable) {
+    const id = deliverable.deliverable_id;
+    let updated: Deliverable;
+    try {
+      updated = await submitDeliverable(id, session.accessToken);
+    } catch (error) {
+      if (!isUncertainDeliverableWrite(error) || !isCurrentSession(session)) throw error;
+      updated = await getDeliverable(id, session.accessToken);
+      if (updated.deliverable_id !== id || updated.status !== "submitted") throw error;
+    }
+    if (!isCurrentSession(session)) return;
+    place(updated);
+    showFeedback({
+      tone: "success",
+      message: `${deliverable.status === "revision_requested" ? "Resubmitted" : "Submitted"} "${updated.title}".`,
+    });
+  }
+
   async function submitExisting(deliverable: Deliverable) {
-    if (busy.current || draftSubmitBlockReason(deliverable.status)) return;
+    if (busy.current || draftSubmitBlockReason(deliverable.status) || !isCurrentSession(session)) return;
     busy.current = true;
     setPending({ action: "submit", id: deliverable.deliverable_id });
     setFeedback(null);
     try {
-      const updated = await submitDeliverable(deliverable.deliverable_id, workspace.session.accessToken);
-      place(updated);
-      showFeedback({
-        tone: "success",
-        message: `Submit finished for "${updated.title}". Status is ${deliverableStatusLabel(updated.status)}.`,
-      });
+      await submit(deliverable);
     } catch (error) {
-      if (clearSessionIfUnauthorized(error)) return;
+      if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
       showFeedback({ tone: "error", message: collaborationErrorMessage(error) });
     } finally {
       busy.current = false;
@@ -227,10 +380,16 @@ function CreatorWorkspace({
   }
 
   const initialValues: DeliverableFormValues = {
-    campaignId: available[0] ? String(available[0].campaign.campaign_id) : "",
-    title: "",
-    description: "",
-    attachments: [{ key: "attachment-1", type: "link", url: "" }],
+    campaignId: String(editing?.campaign_id ?? available[0]?.campaign.campaign_id ?? ""),
+    title: editing?.title ?? "",
+    description: editing?.description ?? "",
+    attachments: editing
+      ? editing.attachments.map((attachment, index) => ({
+          key: `attachment-${index + 1}`,
+          type: attachment.attachment_type,
+          url: attachment.url,
+        }))
+      : [{ key: "attachment-1", type: "link", url: "" }],
   };
 
   return (
@@ -246,6 +405,20 @@ function CreatorWorkspace({
           <AppNotice tone={feedback.tone} message={feedback.message} onClose={() => setFeedback(null)} />
         )}
       </div>
+
+      {available.filter(({ campaign }) => pendingCreates[campaign.campaign_id]).map(({ campaign }) => (
+        <div key={campaign.campaign_id} className="flex flex-wrap items-center gap-2">
+          <span className="text-sm">Check the previous draft for {campaign.name}.</span>
+          <AppButton variant="secondary" isDisabled={pending !== null} onPress={() => checkDraft(campaign.campaign_id)}>
+            {pending?.action === "check" && pending.id === campaign.campaign_id ? "Checking..." : "Check saved draft"}
+          </AppButton>
+          {retryableCreates[campaign.campaign_id] === pendingCreates[campaign.campaign_id].requestId && (
+            <AppButton variant="secondary" isDisabled={pending !== null} onPress={() => checkDraft(campaign.campaign_id, true)}>
+              Retry draft creation
+            </AppButton>
+          )}
+        </div>
+      ))}
 
       {denied.map((entry) => (
         <AppNotice
@@ -291,11 +464,7 @@ function CreatorWorkspace({
       <div className="flex flex-col items-start gap-2">
         <AppButton
           isDisabled={Boolean(addReason) || pending !== null}
-          onPress={() => {
-            setFormError("");
-            setFormKey((value) => value + 1);
-            setOpen(true);
-          }}
+          onPress={() => openEditor({ kind: "new" })}
         >
           Add deliverable
         </AppButton>
@@ -305,37 +474,36 @@ function CreatorWorkspace({
       <StatusGroups
         workspace={workspace}
         pending={pending}
+        onEdit={(deliverable) => openEditor({ kind: "edit", deliverable })}
         onSubmit={submitExisting}
       />
 
-      {open && (
+      {editor && (
         <Modal>
           <Modal.Backdrop
             isOpen
             onOpenChange={(isOpen) => {
-              if (!isOpen && !pending) setOpen(false);
+              if (!isOpen && !pending) setEditor(null);
             }}
           >
             <Modal.Container size="lg" placement="center">
-              <Modal.Dialog aria-label="Add deliverable">
+              <Modal.Dialog aria-label={editorTitle}>
                 <Modal.Header>
-                  <Modal.Heading>Add deliverable</Modal.Heading>
+                  <Modal.Heading>{editorTitle}</Modal.Heading>
                   <Modal.CloseTrigger isDisabled={pending !== null}>
                     <X size={18} aria-hidden="true" />
                   </Modal.CloseTrigger>
                 </Modal.Header>
                 <Modal.Body>
                   <DeliverableForm
-                    key={formKey}
                     initialValues={initialValues}
-                    campaigns={available.map((entry) => ({
+                    campaigns={editing ? undefined : available.map((entry) => ({
                       value: String(entry.campaign.campaign_id),
                       label: entry.campaign.name,
                     }))}
-                    onSaveDraft={(input) => save(input, "draft")}
+                    mode={!editing ? "create" : editing.status === "revision_requested" ? "revise" : "edit"}
+                    onSave={(input) => save(input, "save")}
                     onSubmit={(input) => save(input, "submit")}
-                    saveDisabled={pending !== null}
-                    submitDisabled={pending !== null}
                     pending={formPending}
                     error={formError}
                   />
@@ -352,10 +520,12 @@ function CreatorWorkspace({
 function StatusGroups({
   workspace,
   pending,
+  onEdit,
   onSubmit,
 }: {
   workspace: CollaborationWorkspace;
   pending: Pending | null;
+  onEdit: (deliverable: Deliverable) => void;
   onSubmit: (deliverable: Deliverable) => void;
 }) {
   const groups = [
@@ -389,7 +559,7 @@ function StatusGroups({
             </h2>
             {status === "revision_requested" && (
               <p className="text-sm text-[var(--cg-muted)]">
-                Resubmit sends this deliverable again with its current content and attachment.
+                Review the feedback, make any changes, and resubmit when ready.
               </p>
             )}
             {rows.length === 0 ? (
@@ -407,15 +577,28 @@ function StatusGroups({
                       workspace.creatorNames[deliverable.creator_id],
                     )}
                   >
-                    <div className="flex flex-col items-start gap-2 border-t border-[var(--cg-border)] pt-3">
-                      <AppButton
-                        isDisabled={Boolean(reason) || pending !== null}
-                        aria-label={`${status === "revision_requested" ? "Resubmit" : "Submit"} ${deliverable.title}`}
-                        onPress={() => onSubmit(deliverable)}
-                      >
-                        {submitting ? "Submitting..." : status === "revision_requested" ? "Resubmit" : "Submit"}
-                      </AppButton>
-                    </div>
+                    {status !== "draft" && (
+                      <DeliverableFeedback deliverable={deliverable} session={workspace.session} />
+                    )}
+                    {!reason && (
+                      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--cg-border)] pt-3">
+                        <AppButton
+                          variant="secondary"
+                          isDisabled={pending !== null}
+                          aria-label={`Edit ${deliverable.title}`}
+                          onPress={() => onEdit(deliverable)}
+                        >
+                          Edit
+                        </AppButton>
+                        <AppButton
+                          isDisabled={pending !== null}
+                          aria-label={`${status === "revision_requested" ? "Resubmit" : "Submit"} ${deliverable.title}`}
+                          onPress={() => onSubmit(deliverable)}
+                        >
+                          {submitting ? "Submitting..." : status === "revision_requested" ? "Resubmit" : "Submit"}
+                        </AppButton>
+                      </div>
+                    )}
                   </DeliverableCard>
                 );
               })

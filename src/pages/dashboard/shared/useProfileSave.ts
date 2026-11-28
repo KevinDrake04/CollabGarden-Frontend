@@ -1,11 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { type ProfileSave } from "../../../api/profileRequest";
-import { expireSession, readSession, type Session } from "../../auth/session";
-
-export function isCurrentProfileSession({ userId, accessToken, role }: Session) {
-  const current = readSession();
-  return current?.userId === userId && current.accessToken === accessToken && current.role === role;
-}
+import { expireSession, isCurrentSession, type Session } from "../../auth/session";
 
 export function useProfileSave<T>(
   session: Session,
@@ -28,14 +23,14 @@ export function useProfileSave<T>(
     closeEditor: boolean,
   ): Promise<ProfileSave<T> | undefined> {
     const { signal } = active.controller;
-    const current = () => !signal.aborted && isCurrentProfileSession(session);
+    const current = () => !signal.aborted && isCurrentSession(session);
     if (!current() || active.saving) return;
     active.saving = true;
     try {
       const result = await action(signal);
       if (!result || !current()) return;
       if (result.error?.status === 401) {
-        expireSession();
+        expireSession(session);
         return;
       }
       onResult(result.saved, closeEditor && !result.error);

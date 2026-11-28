@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useNavigationType } from "react-router";
 import { ArrowUpRight, MapPin } from "lucide-react";
 import {
   AppAvatar,
@@ -12,15 +12,15 @@ import {
 import {
   directoryCacheKey,
   isFresh,
-  loadCounties,
   loadDirectory,
   profilePath,
-  readCounties,
   readDirectory,
-  type County,
+  searchEntries,
   type DirectoryEntry,
   type DirectoryType,
 } from "../../api/directory";
+import { NJCountyMap } from "../../components/maps/NJCountyMap";
+import { NJ_COUNTY_NAMES, readCountyParams } from "../../components/maps/countyPaths";
 import CountyFilter from "./CountyFilter";
 
 type Filters = {
@@ -33,27 +33,42 @@ function readFilters(search: string): Filters {
   const params = new URLSearchParams(search);
   return {
     type: params.get("type") === "creator" ? "creator" : "business",
-    counties: [...new Set(params.getAll("county"))],
+    counties: readCountyParams(params),
     query: params.get("q") ?? "",
   };
+}
+
+function sameCounties(left: string[], right: string[]) {
+  return left.length === right.length && left.every((name, index) => name === right[index]);
 }
 
 function sameFilters(left: Filters, right: Filters) {
   return left.type === right.type
     && left.query === right.query
-    && left.counties.join("\0") === right.counties.join("\0");
+    && sameCounties(left.counties, right.counties);
+}
+
+function writeCountyParams(params: URLSearchParams, counties: string[]) {
+  params.delete("county");
+  counties.forEach((county) => params.append("county", county));
 }
 
 // Business is the default tab, so its type stays out of the URL.
-function writeFilterParams(filters: Filters, current: URLSearchParams) {
+function writeFilterParams(filters: Partial<Filters>, current: URLSearchParams) {
   const params = new URLSearchParams(current);
-  params.delete("type");
-  params.delete("q");
-  params.delete("county");
   if (filters.type === "creator") params.set("type", "creator");
+  if (filters.type === "business") params.delete("type");
   if (filters.query) params.set("q", filters.query);
-  filters.counties.forEach((county) => params.append("county", county));
+  if (filters.query === "") params.delete("q");
+  if (filters.counties) writeCountyParams(params, filters.counties);
   return params;
+}
+
+function emptyCountyPlace(names: string[]) {
+  const labeled = names.map((name) => `${name} County`);
+  if (labeled.length === 1) return labeled[0];
+  if (labeled.length === 2) return `${labeled[0]} or ${labeled[1]}`;
+  return "these counties";
 }
 
 function locationLabel(county: string) {
@@ -66,14 +81,14 @@ function locationLabel(county: string) {
 
 let didPrefetchOtherTab = false;
 
-function prefetchOtherTab(type: DirectoryType, selectedCounties: string[]) {
+function prefetchOtherTab(type: DirectoryType) {
   if (didPrefetchOtherTab) return;
   didPrefetchOtherTab = true;
 
   const other: DirectoryType = type === "business" ? "creator" : "business";
-  const saved = readDirectory(other, selectedCounties, "");
+  const saved = readDirectory(other, []);
   if (saved && isFresh(saved.savedAt)) return;
-  loadDirectory(other, selectedCounties).catch(() => {});
+  loadDirectory(other, []).catch(() => {});
 }
 
 function DirectoryCard({ entry }: { entry: DirectoryEntry }) {
@@ -100,45 +115,40 @@ function DirectoryCard({ entry }: { entry: DirectoryEntry }) {
 }
 
 export default function DirectoryPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const searchKey = searchParams.toString();
-  const filters = useMemo(() => readFilters(searchKey), [searchKey]);
-  const [counties, setCounties] = useState<County[]>(() => readCounties()?.value ?? []);
-  const [entries, setEntries] = useState<DirectoryEntry[]>(() => {
-    const initial = readFilters(searchKey);
-    return readDirectory(initial.type, initial.counties, initial.query)?.entries ?? [];
-  });
-  const [status, setStatus] = useState<"loading" | "ready" | "error">(() => {
-    const initial = readFilters(searchKey);
-    return readDirectory(initial.type, initial.counties, initial.query) ? "ready" : "loading";
-  });
+  const { search, hash, state, key: locationKey } = useLocation();
+  const navigate = useNavigate();
+  const navigationType = useNavigationType();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusHeading = state?.focusDirectoryHeading === true;
+  const filterState = focusHeading ? undefined : state;
+  const filters = useMemo(() => readFilters(search), [search]);
+  const { type, counties, query } = filters;
+  const resultKey = directoryCacheKey(type, counties);
+  const [result, setResult] = useState(() => ({
+    key: resultKey,
+    entries: readDirectory(type, counties)?.entries ?? null,
+    loadFailed: false,
+  }));
   const [notice, setNotice] = useState("");
-  const [refreshNote, setRefreshNote] = useState("");
   const [retry, setRetry] = useState(0);
-  const filtersRef = useRef(filters);
   const handledRetry = useRef(retry);
   const wroteFilters = useRef(false);
   const replacingSearch = useRef(false);
-  filtersRef.current = filters;
 
-  const viewKey = directoryCacheKey(filters.type, filters.counties, filters.query);
-  const viewRef = useRef(viewKey);
-  viewRef.current = viewKey;
-  const [shownKey, setShownKey] = useState(viewKey);
-
-  // Swap in the saved list before paint so another tab never flashes on screen.
-  if (shownKey !== viewKey) {
-    const saved = readDirectory(filters.type, filters.counties, filters.query);
-    setShownKey(viewKey);
-    setRefreshNote("");
-    if (saved) {
-      setEntries(saved.entries);
-      setStatus("ready");
-    } else {
-      setEntries([]);
-      setStatus("loading");
-    }
+  // Use the next type and county list before paint so previous results never flash.
+  if (result.key !== resultKey) {
+    setResult({
+      key: resultKey,
+      entries: readDirectory(type, counties)?.entries ?? null,
+      loadFailed: false,
+    });
   }
+
+  useEffect(() => {
+    if (!focusHeading || navigationType === "POP") return;
+    headingRef.current?.focus({ preventScroll: true });
+    headingRef.current?.scrollIntoView({ block: "nearest" });
+  }, [focusHeading, locationKey, navigationType]);
 
   useEffect(() => {
     if (wroteFilters.current) {
@@ -147,72 +157,52 @@ export default function DirectoryPage() {
     }
     replacingSearch.current = false;
     setNotice("");
-  }, [searchKey]);
 
-  // The county dropdown can fill from memory. A slow county request must not
-  // hide directory cards that are already saved.
+    const params = new URLSearchParams(search);
+    if (!sameCounties(params.getAll("county"), filters.counties)) {
+      writeCountyParams(params, filters.counties);
+      navigate({ search: params.toString(), hash }, { replace: true, state: filterState });
+    }
+  }, [search, filters.counties, hash, filterState, navigate]);
+
+  // Recheck freshness when URL filters change, keeping saved results during a refresh.
   useEffect(() => {
-    const saved = readCounties();
-    if (saved && isFresh(saved.savedAt)) {
-      setCounties(saved.value);
+    const forceRefresh = handledRetry.current !== retry;
+    handledRetry.current = retry;
+    if (counties.length === 0 && !query.trim()) prefetchOtherTab(type);
+
+    const saved = readDirectory(type, counties);
+    if (saved && isFresh(saved.savedAt) && !forceRefresh) {
+      setResult((shown) => shown.key === resultKey && shown.entries !== saved.entries
+        ? { key: resultKey, entries: saved.entries, loadFailed: false }
+        : shown);
       return;
     }
 
-    let active = true;
-    loadCounties(Boolean(saved))
-      .then((data) => {
-        if (active) setCounties(data);
-      })
-      .catch((error: Error) => {
-        if (!active || error.name === "AbortError" || readCounties()) return;
-        const latest = filtersRef.current;
-        if (!readDirectory(latest.type, latest.counties, latest.query)) {
-          setStatus("error");
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [retry]);
-
-  // Show a saved list immediately, then refresh it in the background when it is stale.
-  useEffect(() => {
-    const type = filters.type;
-    const selectedCounties = filters.counties;
-    const query = filters.query;
-    const key = directoryCacheKey(type, selectedCounties, query);
-    const forceRefresh = handledRetry.current !== retry;
-    handledRetry.current = retry;
-    prefetchOtherTab(type, selectedCounties);
-
-    const saved = readDirectory(type, selectedCounties, query);
-    if (saved && isFresh(saved.savedAt) && !forceRefresh) return;
-
     let current = true;
-    loadDirectory(type, selectedCounties)
-      .then(() => {
-        const next = readDirectory(type, selectedCounties, query);
-        if (!current || !next || viewRef.current !== key) return;
-        setEntries(next.entries);
-        setStatus("ready");
-        setRefreshNote("");
-      })
-      .catch((error: Error) => {
-        if (!current || error.name === "AbortError" || viewRef.current !== key) return;
-        const latest = readDirectory(type, selectedCounties, query);
-        if (latest) {
-          setEntries(latest.entries);
-          setStatus("ready");
-          setRefreshNote("Couldn't refresh the directory. Showing the last results.");
-        } else {
-          setStatus("error");
-        }
-      });
+    async function refreshDirectory() {
+      let entries: DirectoryEntry[] | null;
+      let loadFailed = false;
+      try {
+        entries = await loadDirectory(type, counties);
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        // A failed county lookup can invalidate the saved list before retry.
+        entries = readDirectory(type, counties)?.entries ?? null;
+        loadFailed = true;
+      }
+
+      if (!current) return;
+      setResult((shown) => shown.key === resultKey
+        ? { key: resultKey, entries, loadFailed }
+        : shown);
+    }
+    void refreshDirectory();
 
     return () => {
       current = false;
     };
-  }, [filters.type, filters.counties, filters.query, retry]);
+  }, [type, counties, query, resultKey, retry]);
 
   function updateFilters(changes: Partial<Filters>, kind: "search" | "commit" = "commit") {
     const nextFilters = { ...filters, ...changes };
@@ -221,7 +211,12 @@ export default function DirectoryPage() {
     const replace = kind === "search" && replacingSearch.current;
     wroteFilters.current = true;
     replacingSearch.current = kind === "search";
-    setSearchParams(writeFilterParams(nextFilters, searchParams), { replace });
+    const params = writeFilterParams(changes, new URLSearchParams(search));
+    navigate({ search: params.toString(), hash }, { replace, state: filterState });
+  }
+
+  function clearFilters() {
+    updateFilters({ counties: [], query: "" });
   }
 
   async function copyFilterLink() {
@@ -240,23 +235,55 @@ export default function DirectoryPage() {
     }
   }
 
-  const hasFilters = Boolean(filters.query.trim() || filters.counties.length);
-  const loading = status === "loading";
-  const error = status === "error";
+  const entries = searchEntries(result.entries ?? [], query);
+  const loading = result.entries === null && !result.loadFailed;
+  const error = result.entries === null && result.loadFailed;
+  const hasSearch = Boolean(query.trim());
+  const hasCounty = counties.length > 0;
+  const hasFilters = hasSearch || hasCounty;
+  const countyHasNoListings = hasCounty && result.entries?.length === 0;
+  const place = emptyCountyPlace(filters.counties);
   const itemName = filters.type === "business" ? "business" : "creator";
   const pluralName = filters.type === "business" ? "businesses" : "creators";
   const countLabel = entries.length === 1 ? itemName : pluralName;
+  const noResultsDescription = hasSearch && hasCounty
+    ? `Nothing in ${place} matches this search.`
+    : hasFilters
+      ? "Try a different search or county."
+      : "There are no listings to show right now.";
+  const clearFiltersButton = hasFilters && (
+    <AppButton variant="secondary" onPress={clearFilters}>
+      Clear filters
+    </AppButton>
+  );
 
   return (
     <div className="-mx-12 -mt-12 flex-1 bg-[#f8f8f0] max-[700px]:-mx-5 max-[700px]:-mt-8">
-    <div className="mx-auto w-full min-w-0 max-w-6xl space-y-8 px-4 py-10 text-[var(--cg-text)] md:px-8 md:py-14">
-      <div className="max-w-2xl">
-        <h1 className="font-bold tracking-tight text-[var(--cg-primary-dark)]">Explore CollabGarden</h1>
+    <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-10 text-[var(--cg-text)] md:px-8 md:py-14">
+      <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+      <div className="max-w-2xl lg:col-start-1 lg:row-start-1">
+        <h1 ref={headingRef} tabIndex={-1} className="scroll-mt-24 font-bold tracking-tight text-[var(--cg-primary-dark)]">
+          Explore CollabGarden
+        </h1>
         <p className="mt-3 text-base">
           Discover local businesses and creators across New Jersey.
         </p>
       </div>
 
+      <aside
+        aria-labelledby="directory-map-heading"
+        className="mx-auto w-full max-w-[320px] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mx-0 lg:max-w-none lg:sticky lg:top-24"
+      >
+        <h2 id="directory-map-heading" className="mb-3 text-center text-sm font-semibold text-[var(--cg-primary-dark)] lg:text-left">
+          Counties
+        </h2>
+        <NJCountyMap
+          selected={hasCounty ? counties : NJ_COUNTY_NAMES}
+          onSelect={(name) => updateFilters({ counties: [name] })}
+        />
+      </aside>
+
+      <div className="space-y-8 lg:col-start-1 lg:row-start-2">
       <div
         className="inline-flex w-full gap-1 rounded-2xl border border-[var(--cg-border)] bg-white p-1 shadow-sm sm:w-auto"
         role="group"
@@ -288,7 +315,7 @@ export default function DirectoryPage() {
             onChange={(query) => updateFilters({ query }, "search")}
           />
           <CountyFilter
-            options={counties.map((county) => county.name)}
+            options={NJ_COUNTY_NAMES}
             selected={filters.counties}
             onChange={(selected) => updateFilters({ counties: selected })}
           />
@@ -296,17 +323,13 @@ export default function DirectoryPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {!loading && !error && (
+        {!loading && !error && !countyHasNoListings && (
           <p className="text-sm font-medium" aria-live="polite">
             {entries.length} {countLabel} found
           </p>
         )}
         <div className="flex flex-wrap gap-2">
-          {hasFilters && (
-            <AppButton variant="secondary" onPress={() => updateFilters({ counties: [], query: "" })}>
-              Clear filters
-            </AppButton>
-          )}
+          {clearFiltersButton}
           <AppButton variant="secondary" onPress={copyFilterLink}>
             Copy filter link
           </AppButton>
@@ -314,11 +337,11 @@ export default function DirectoryPage() {
       </div>
 
       {notice && <AppNotice message={notice} onClose={() => setNotice("")} />}
-      {refreshNote && !loading && !error && (
+      {result.entries && result.loadFailed && (
         <AppNotice
           tone="error"
-          message={refreshNote}
-          onClose={() => setRefreshNote("")}
+          message="Couldn't refresh the directory. Showing the last results."
+          onClose={() => setResult((shown) => ({ ...shown, loadFailed: false }))}
         />
       )}
 
@@ -337,19 +360,29 @@ export default function DirectoryPage() {
         </div>
       ) : entries.length === 0 ? (
         <EmptyState
-          title="No results found"
-          description={hasFilters ? "Try a different search or county." : "There are no listings to show right now."}
-          action={hasFilters ? (
-            <AppButton variant="secondary" onPress={() => updateFilters({ counties: [], query: "" })}>
-              Clear filters
-            </AppButton>
-          ) : undefined}
+          title={countyHasNoListings ? `No ${pluralName} in ${place} yet` : "No results found"}
+          description={countyHasNoListings
+            ? `Nobody is listed for ${place} yet. Sign up, and an approved profile can appear in the directory.`
+            : noResultsDescription}
+          action={countyHasNoListings ? (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Link
+                to={`/signup?role=${filters.type}`}
+                className="cg-focus inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--cg-primary)] px-4 py-2 text-sm font-semibold text-white no-underline"
+              >
+                Sign up
+              </Link>
+              {clearFiltersButton}
+            </div>
+          ) : clearFiltersButton}
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {entries.map((entry) => <DirectoryCard key={entry.id} entry={entry} />)}
         </div>
       )}
+      </div>
+      </div>
     </div>
     </div>
   );
