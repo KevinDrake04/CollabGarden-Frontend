@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { Menu, X, type LucideIcon } from "lucide-react";
+import { CountiesMenu } from "./CountiesMenu";
 
 export interface NavItem {
   label: string;
@@ -129,14 +130,15 @@ export function PublicNavbar({
 }: PublicNavbarProps) {
   const { pathname, search } = useLocation();
   const [open, setOpen] = useState(false);
+  const mobileNavId = useId();
 
   useEffect(() => {
     setOpen(false);
   }, [pathname, search]);
 
   return (
-    <div className="w-full border-b border-[var(--cg-border)] bg-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center lg:px-8 lg:py-4">
+    <div className="flex max-h-dvh w-full flex-col border-b border-[var(--cg-border)] bg-white lg:block lg:max-h-none">
+      <div className="mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-3 px-4 py-2 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center lg:px-8 lg:py-4">
         <Link
           to="/"
           className={`inline-flex shrink-0 items-center gap-2 justify-self-start rounded-lg text-base font-semibold text-[var(--cg-primary-dark)] no-underline ${focusClass}`}
@@ -152,6 +154,7 @@ export function PublicNavbar({
           aria-label={navLabel}
         >
           <PublicLinks links={links} />
+          <CountiesMenu />
         </nav>
 
         <div className="hidden items-center justify-self-end gap-4 lg:flex">
@@ -180,6 +183,7 @@ export function PublicNavbar({
           type="button"
           className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--cg-border)] bg-white text-[var(--cg-primary-dark)] lg:hidden ${focusClass}`}
           aria-expanded={open}
+          aria-controls={open ? mobileNavId : undefined}
           aria-label={open ? "Close menu" : "Open menu"}
           onClick={() => setOpen((value) => !value)}
         >
@@ -189,10 +193,12 @@ export function PublicNavbar({
 
       {open && (
         <nav
-          className="flex flex-col gap-1 border-t border-[var(--cg-border)] px-3 py-3 lg:hidden"
+          id={mobileNavId}
+          className="flex min-h-0 flex-col gap-1 overflow-y-auto overscroll-contain border-t border-[var(--cg-border)] px-3 py-3 lg:hidden"
           aria-label={navLabel}
         >
           <PublicLinks links={links} onSelect={() => setOpen(false)} />
+          <CountiesMenu variant="inline" onNavigate={() => setOpen(false)} />
           {identity && (
             <p className="break-all px-3 py-2 text-sm text-[var(--cg-muted)]">{identity}</p>
           )}

@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+import { countyNameKey } from "../utils/countyNames";
+
 // Railway API data used by the directory and profile pages.
 export type DirectoryType = "business" | "creator";
 
@@ -118,20 +120,18 @@ export function getCreator(creatorId: number, signal: AbortSignal) {
 
 async function getDirectory(
   type: DirectoryType,
-  selectedCounties: string[],
+  selected: County[],
   counties: County[],
   signal: AbortSignal,
-): Promise<DirectoryEntry[]> {
+): Promise<Saved<DirectoryEntry[]>> {
   if (type === "creator") {
-    const creators = await get<Creator[]>("/api/v1/creators", signal);
-    const selectedIds = counties
-      .filter((county) => selectedCounties.includes(county.name))
-      .map((county) => county.county_id);
+    const { value: creators, savedAt } = await loadCreators(signal);
+    const selectedIds = new Set(selected.map((county) => county.county_id));
 
-    return creators
+    const entries = creators
       .filter((creator) => {
-        if (selectedCounties.length === 0) return true;
-        return creator.county_id != null && selectedIds.includes(creator.county_id);
+        if (selected.length === 0) return true;
+        return creator.county_id != null && selectedIds.has(creator.county_id);
       })
       .map((creator) => ({
         id: `creator-${creator.creator_id}`,
@@ -140,13 +140,12 @@ async function getDirectory(
         county: countyNameForId(creator.county_id, counties),
         imageUrl: creator.photo_url ?? undefined,
       }));
+    return { value: entries, savedAt };
   }
 
   // Ask for each selected county with county_id, then keep one card per business.
   // county_ids on the business lists every county it operates in.
-  const targets = selectedCounties.length === 0
-    ? [null]
-    : counties.filter((county) => selectedCounties.includes(county.name));
+  const targets = selected.length === 0 ? [null] : selected;
 
   const groups = await Promise.all(
     targets.map(async (county) => {
@@ -172,7 +171,7 @@ async function getDirectory(
       }
     }
   }
-  return [...unique.values()];
+  return { value: [...unique.values()], savedAt: Date.now() };
 }
 
 // In-memory only. These maps outlive page components, so going back to a
@@ -216,19 +215,35 @@ export function loadCounties(force = false) {
   return request;
 }
 
+let savedCreators: Saved<Creator[]> | null = null;
+let creatorListRequest: Promise<Saved<Creator[]>> | null = null;
+
+function loadCreators(signal: AbortSignal) {
+  if (savedCreators && isFresh(savedCreators.savedAt)) {
+    return Promise.resolve(savedCreators);
+  }
+  if (creatorListRequest) return creatorListRequest;
+
+  creatorListRequest = get<Creator[]>("/api/v1/creators", signal)
+    .then((creators) => {
+      savedCreators = { value: creators, savedAt: Date.now() };
+      return savedCreators;
+    })
+    .finally(() => {
+      creatorListRequest = null;
+    });
+  return creatorListRequest;
+}
+
 export function directoryCacheKey(
   type: DirectoryType,
   counties: string[],
-  query: string,
+  query = "",
 ) {
   return `${type}|${[...counties].sort().join(",")}|${query.trim().toLowerCase()}`;
 }
 
-function directorySourceKey(type: DirectoryType, counties: string[]) {
-  return directoryCacheKey(type, counties, "");
-}
-
-function searchEntries(entries: DirectoryEntry[], query: string) {
+export function searchEntries(entries: DirectoryEntry[], query: string) {
   const search = query.trim().toLowerCase();
   if (!search) return entries;
   return entries.filter((entry) =>
@@ -244,9 +259,9 @@ const directoryRequests = new Map<string, Promise<DirectoryEntry[]>>();
 export function readDirectory(
   type: DirectoryType,
   selectedCounties: string[],
-  query: string,
+  query = "",
 ) {
-  const saved = directoryCache.get(directorySourceKey(type, selectedCounties));
+  const saved = directoryCache.get(directoryCacheKey(type, selectedCounties));
   if (!saved) return null;
   return {
     entries: searchEntries(saved.value, query),
@@ -255,16 +270,30 @@ export function readDirectory(
 }
 
 export function loadDirectory(type: DirectoryType, selectedCounties: string[]) {
-  const key = directorySourceKey(type, selectedCounties);
+  const key = directoryCacheKey(type, selectedCounties);
   const pending = directoryRequests.get(key);
   if (pending) return pending;
 
   const controller = new AbortController();
   const request = loadCounties()
-    .then((counties) => getDirectory(type, selectedCounties, counties, controller.signal))
-    .then((entries) => {
-      directoryCache.set(key, { value: entries, savedAt: Date.now() });
-      return entries;
+    .then((counties) => {
+      const missing = new Set(selectedCounties.map(countyNameKey));
+      const selected = counties.filter((county) =>
+        Number.isInteger(county?.county_id)
+        && typeof county.name === "string"
+        && missing.delete(countyNameKey(county.name)),
+      );
+      if (missing.size > 0) {
+        // Retry must reload the incomplete lookup and replace any saved result for this view.
+        if (savedCounties?.value === counties) savedCounties = null;
+        directoryCache.delete(key);
+        throw new Error("The county list is missing a selected county.");
+      }
+      return getDirectory(type, selected, counties, controller.signal);
+    })
+    .then((saved) => {
+      directoryCache.set(key, saved);
+      return saved.value;
     })
     .finally(() => {
       if (directoryRequests.get(key) === request) directoryRequests.delete(key);

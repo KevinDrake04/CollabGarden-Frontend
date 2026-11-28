@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { MapPin, Search, Users } from "lucide-react";
 import { AppAvatar } from "../../components";
+import { NJCountyMap } from "../../components/maps/NJCountyMap";
+import { countyDiscoverPath } from "../../components/maps/countyPaths";
 import {
   isFresh,
   loadDirectory,
@@ -94,6 +96,7 @@ function featuredCreators(entries: DirectoryEntry[]) {
 }
 
 export default function LandingPage() {
+  const navigate = useNavigate();
   const savedCreators = readDirectory("creator", [], "");
   const [creators, setCreators] = useState<DirectoryEntry[]>(() =>
     savedCreators ? featuredCreators(savedCreators.entries) : [],
@@ -167,6 +170,33 @@ export default function LandingPage() {
               Local businesses and creators
             </p>
             <p className="text-xs text-[var(--cg-muted)]">Find someone nearby to work with.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white" aria-labelledby="counties-heading">
+        <div className={sectionClass}>
+          <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(260px,340px)] lg:gap-16">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.16em] text-[var(--cg-primary)] uppercase">
+                21 counties
+              </p>
+              <h2 id="counties-heading" className={headingClass}>
+                Find people in your county
+              </h2>
+              <p className="mt-3 max-w-xl text-sm text-[var(--cg-muted)] md:text-base">
+                Choose a county on the map to open the directory there. Every New Jersey county is included.
+              </p>
+              <div className="mt-6">
+                <ActionLink to="/discover">Explore all counties</ActionLink>
+              </div>
+            </div>
+            <div className="mx-auto w-full max-w-[340px]">
+              <NJCountyMap
+                selected={[]}
+                onSelect={(name) => navigate(countyDiscoverPath(name), { state: { focusDirectoryHeading: true } })}
+              />
+            </div>
           </div>
         </div>
       </section>
