@@ -34,11 +34,13 @@ import { DeliverableFeedback } from "../shared/DeliverableFeedback";
 import { clearSessionIfUnauthorized, useRoleWorkspace } from "../shared/useRoleWorkspace";
 import { linkClass, signedInAs, textLinkClass, titleClass } from "../shared/workspaceSession";
 
-type Feedback = { tone: "success" | "error"; message: string };
+type Feedback = { tone: "success" | "error" | "info"; message: string };
 type Pending = { action: "save" | "submit"; id?: number } | { action: "check"; id: number };
 type Editor = { kind: "new" } | { kind: "edit"; deliverable: Deliverable };
 type PendingCreate = { requestId: string; previousIds: number[]; content: DeliverableWrite };
 
+// A POST can still be in flight after leaving and reopening the workspace in this tab.
+const activeCreates = new Set<string>();
 const pageClass = "flex w-full flex-col gap-6 text-[var(--cg-text)]";
 const headingClass = "text-xl font-semibold text-[var(--cg-primary-dark)]";
 
@@ -72,7 +74,7 @@ function LoadingBlock({ label }: { label: string }) {
 
 export default function CreatorDeliverablesPage() {
   const returnPath = "/dashboard/creator/deliverables";
-  const { view, reload, updateAccess } = useRoleWorkspace("creator");
+  const { view, reload, updateAccess, account } = useRoleWorkspace("creator");
 
   return (
     <div className={pageClass}>
@@ -133,6 +135,7 @@ export default function CreatorDeliverablesPage() {
         <CreatorWorkspace
           key={`${view.workspace.session.userId}:${view.workspace.session.accessToken}`}
           workspace={view.workspace}
+          creatorId={account?.creatorId ?? null}
           onAccess={updateAccess}
           reload={reload}
         />
@@ -143,10 +146,12 @@ export default function CreatorDeliverablesPage() {
 
 function CreatorWorkspace({
   workspace,
+  creatorId,
   onAccess,
   reload,
 }: {
   workspace: CollaborationWorkspace;
+  creatorId: number | null;
   onAccess: (
     update: (access: CollaborationWorkspace["access"]) => CollaborationWorkspace["access"],
   ) => void;
@@ -160,6 +165,7 @@ function CreatorWorkspace({
   const { session } = workspace;
   const createKey = `collabgarden.pendingDeliverables.${session.userId}`;
   const [pendingCreates, setPendingCreates] = useState(() => readPendingCreates(createKey));
+  const [retryableCreates, setRetryableCreates] = useState<Partial<Record<number, string>>>({});
   const available = workspace.access.filter((entry) => !entry.error);
   const denied = workspace.access.filter((entry) => entry.error);
   const addReason = available.length === 0
@@ -185,17 +191,42 @@ function CreatorWorkspace({
     onAccess((access) => upsertDeliverable(access, deliverable));
   }
 
-  function rememberCreate(campaignId: number, draft: PendingCreate, action: "lock" | "clear") {
+  function rememberCreate(campaignId: number, draft: PendingCreate | null, replacingId?: string) {
     // A response can arrive after this page has been reopened and another save has started.
     const next = readPendingCreates(createKey);
-    if (action === "lock") {
-      next[campaignId] = draft;
-    } else {
-      if (next[campaignId]?.requestId !== draft.requestId) return;
-      delete next[campaignId];
+    if (next[campaignId]?.requestId !== replacingId) {
+      setPendingCreates(next);
+      return false;
     }
+    if (draft) next[campaignId] = draft;
+    else delete next[campaignId];
     sessionStorage.setItem(createKey, JSON.stringify(next));
     setPendingCreates(next);
+    return true;
+  }
+
+  async function saveDraft(campaignId: number, draft: Omit<PendingCreate, "requestId">, retryOf?: string) {
+    // Keep the lock across reloads in case the server saves before the connection drops.
+    const attempt = { ...draft, requestId: crypto.randomUUID() };
+    if (!rememberCreate(campaignId, attempt, retryOf)) return null;
+    activeCreates.add(attempt.requestId);
+    try {
+      const saved = await createDeliverable(campaignId, attempt.content, session.accessToken);
+      if (!isCurrentSession(session) || !rememberCreate(campaignId, null, attempt.requestId)) return null;
+      return saved;
+    } catch (error) {
+      if (!isCurrentSession(session)) return null;
+      if (isUncertainDeliverableWrite(error)) {
+        setEditor(null);
+        showFeedback({ tone: "error", message: "Couldn't confirm the draft. Check the campaign before creating it again." });
+        return null;
+      }
+      // A rejected retry leaves the outcome of the original save uncertain.
+      if (!retryOf) rememberCreate(campaignId, null, attempt.requestId);
+      throw error;
+    } finally {
+      activeCreates.delete(attempt.requestId);
+    }
   }
 
   async function save(input: DeliverableInput, action: "save" | "submit") {
@@ -216,27 +247,11 @@ function CreatorWorkspace({
     try {
       let saved: Deliverable | null = null;
       if (input.kind === "create" && campaign) {
-        // Keep the lock across reloads in case the server saves before the connection drops.
-        const draft = {
-          requestId: crypto.randomUUID(),
+        saved = await saveDraft(input.campaignId, {
           previousIds: campaign.deliverables.map((item) => item.deliverable_id),
           content: input.content,
-        };
-        rememberCreate(input.campaignId, draft, "lock");
-        try {
-          saved = await createDeliverable(input.campaignId, input.content, session.accessToken);
-        } catch (error) {
-          if (!isCurrentSession(session)) return;
-          if (isUncertainDeliverableWrite(error)) {
-            setEditor(null);
-            showFeedback({ tone: "error", message: "Couldn't confirm the draft. Check the campaign before creating it again." });
-            return;
-          }
-          rememberCreate(input.campaignId, draft, "clear");
-          throw error;
-        }
-        if (!isCurrentSession(session)) return;
-        rememberCreate(input.campaignId, draft, "clear");
+        });
+        if (!saved) return;
       } else if (input.kind === "edit" && editing && Object.keys(input.changes).length > 0) {
         saved = await updateDeliverable(editing.deliverable_id, input.changes, session.accessToken);
       }
@@ -277,7 +292,7 @@ function CreatorWorkspace({
     }
   }
 
-  async function checkDraft(campaignId: number) {
+  async function checkDraft(campaignId: number, retry = false) {
     const entry = available.find(({ campaign }) => campaign.campaign_id === campaignId);
     if (!entry || busy.current || !isCurrentSession(session)) return;
     const stored = readPendingCreates(createKey);
@@ -286,21 +301,40 @@ function CreatorWorkspace({
       setPendingCreates(stored);
       return;
     }
+    if (retry && retryableCreates[campaignId] !== draft.requestId) return;
     busy.current = true;
     setPending({ action: "check", id: campaignId });
+    setFeedback(null);
+    setRetryableCreates((current) => ({ ...current, [campaignId]: undefined }));
     try {
       const [fresh] = await loadCampaignDeliverables([entry.campaign], session);
       if (!isCurrentSession(session)) return;
+      const current = readPendingCreates(createKey);
+      if (current[campaignId]?.requestId !== draft.requestId) {
+        setPendingCreates(current);
+        return;
+      }
       if (!fresh || fresh.error) throw new Error(fresh?.error ?? "Could not read this campaign's deliverables.");
       onAccess((access) => access.map((item) => item.campaign.campaign_id === campaignId ? fresh : item));
       const matches = fresh.deliverables.filter((item) =>
+        item.campaign_id === campaignId && (creatorId == null || item.creator_id === creatorId) &&
         !draft.previousIds.includes(item.deliverable_id) && matchesDraft(item, draft.content),
       );
       if (matches.length === 1) {
-        rememberCreate(campaignId, draft, "clear");
+        rememberCreate(campaignId, null, draft.requestId);
         showFeedback({ tone: "success", message: `Found "${matches[0].title}" in this campaign. Use the existing deliverable below.` });
+      } else if (matches.length > 1) {
+        showFeedback({ tone: "error", message: "Multiple matching drafts were found. Check the saved drafts below before trying again." });
+      } else if (activeCreates.has(draft.requestId)) {
+        showFeedback({ tone: "info", message: "The previous save is still in progress. Check again in a moment." });
+      } else if (retry) {
+        const saved = await saveDraft(campaignId, draft, draft.requestId);
+        if (!saved || !isCurrentSession(session)) return;
+        place(saved);
+        showFeedback({ tone: "success", message: `Draft saved for "${saved.title}". Status is ${deliverableStatusLabel(saved.status)}.` });
       } else {
-        showFeedback({ tone: "error", message: "The draft couldn't be identified. Check again before creating another." });
+        setRetryableCreates((current) => ({ ...current, [campaignId]: draft.requestId }));
+        showFeedback({ tone: "info", message: "No matching draft was found. Retry will check again before saving the same details. The original save could still finish." });
       }
     } catch (error) {
       if (!isCurrentSession(session) || clearSessionIfUnauthorized(error, session)) return;
@@ -378,6 +412,11 @@ function CreatorWorkspace({
           <AppButton variant="secondary" isDisabled={pending !== null} onPress={() => checkDraft(campaign.campaign_id)}>
             {pending?.action === "check" && pending.id === campaign.campaign_id ? "Checking..." : "Check saved draft"}
           </AppButton>
+          {retryableCreates[campaign.campaign_id] === pendingCreates[campaign.campaign_id].requestId && (
+            <AppButton variant="secondary" isDisabled={pending !== null} onPress={() => checkDraft(campaign.campaign_id, true)}>
+              Retry draft creation
+            </AppButton>
+          )}
         </div>
       ))}
 

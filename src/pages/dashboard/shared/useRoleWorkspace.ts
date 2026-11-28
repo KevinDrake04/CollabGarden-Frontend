@@ -105,5 +105,5 @@ export function useRoleWorkspace(expectedRole: "creator" | "business") {
     };
   } else view = { kind: "loading" };
 
-  return { view, reload, updateAccess, active, ids, selected, choose };
+  return { view, reload, updateAccess, active, ids, selected, choose, account: account.account };
 }
