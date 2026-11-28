@@ -278,7 +278,7 @@ export default function DirectoryPage() {
           Counties
         </h2>
         <NJCountyMap
-          selected={filters.counties}
+          selected={hasCounty ? counties : NJ_COUNTY_NAMES}
           onSelect={(name) => updateFilters({ counties: [name] })}
         />
       </aside>
